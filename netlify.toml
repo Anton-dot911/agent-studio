@@ -1,17 +1,11 @@
 [build]
   command = "pnpm install && pnpm build --filter=@agent-studio/web"
-  publish = "apps/web/.next"
+  publish = ".next"
 
 [build.environment]
-  NODE_VERSION    = "20"
-  PNPM_VERSION    = "9"
+  NODE_VERSION = "20"
+  PNPM_VERSION = "9"
   TURBO_TELEMETRY_DISABLED = "1"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
-
-# Redirects для Next.js App Router
-[[redirects]]
-  from   = "/*"
-  to     = "/.netlify/functions/___netlify-handler"
-  status = 200
