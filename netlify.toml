@@ -1,10 +1,11 @@
 [build]
-  command = "pnpm install && pnpm build --filter=@agent-studio/web"
+  base    = "apps/web"
+  command = "cd ../.. && pnpm install && pnpm build --filter=@agent-studio/web"
   publish = ".next"
 
 [build.environment]
-  NODE_VERSION = "20"
-  PNPM_VERSION = "9"
+  NODE_VERSION            = "20"
+  PNPM_VERSION            = "9"
   TURBO_TELEMETRY_DISABLED = "1"
 
 [[plugins]]
