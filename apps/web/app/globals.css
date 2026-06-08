@@ -4,11 +4,11 @@
   --bg: #07090f;
   --card: #0b0e18;
   --card2: #0f1220;
-  --border: #141828;
-  --border2: #1e2540;
-  --text: #9aa8c0;
-  --bright: #e8eeff;
-  --dim: #3a4560;
+  --border: #1e2540;
+  --border2: #2a3560;
+  --text: #c8d8f0;
+  --bright: #eef4ff;
+  --dim: #7a90b8;
   --cyan: #00d4ff;
   --green: #2ecc8f;
   --purple: #8b7ff0;
@@ -24,3 +24,12 @@
 ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
 
 body { font-family: 'IBM Plex Mono', 'Courier New', monospace; }
+
+input, textarea {
+  color: var(--bright) !important;
+}
+
+input::placeholder, textarea::placeholder {
+  color: var(--dim) !important;
+  opacity: 1;
+}
