@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #07090f;
+  --card: #0b0e18;
+  --card2: #0f1220;
+  --border: #141828;
+  --border2: #1e2540;
+  --text: #9aa8c0;
+  --bright: #e8eeff;
+  --dim: #3a4560;
+  --cyan: #00d4ff;
+  --green: #2ecc8f;
+  --purple: #8b7ff0;
+  --orange: #f0843a;
+  --red: #e05555;
+  --yellow: #e0b84a;
+}
+
+* { box-sizing: border-box; }
+
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+body { font-family: 'IBM Plex Mono', 'Courier New', monospace; }
