@@ -1,18 +1,21 @@
 {
   "name": "agent-studio",
-  "version": "0.1.0",
   "private": true,
+  "version": "0.1.0",
+  "packageManager": "npm@10.9.0",
+  "engines": {
+    "node": "20.x"
+  },
   "workspaces": [
     "apps/*",
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build --workspace=apps/web",
-    "dev": "npm run dev --workspace=apps/web"
+    "dev": "npm --workspace web run dev",
+    "build": "npm --workspace web run build",
+    "lint": "npm --workspace web run lint"
   },
   "devDependencies": {
-    "turbo": "^2.3.0",
     "typescript": "^5.8.0"
-  },
-  "engines": { "node": ">=20" }
+  }
 }
