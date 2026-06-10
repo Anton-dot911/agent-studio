@@ -10,8 +10,8 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@agent-studio/agents": "workspace:*",
-    "@agent-studio/tools": "workspace:*",
+    "@agent-studio/agents": "*",
+    "@agent-studio/tools": "*",
     "@supabase/supabase-js": "^2.45.0",
     "next": "16.1.5",
     "react": "^19.1.2",
