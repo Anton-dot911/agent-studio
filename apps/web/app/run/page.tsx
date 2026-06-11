@@ -3,7 +3,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import type { IntakeFormData, ResearchReport } from "@agent-studio/agents";
+import type { IntakeFormData, ResearchReport } from "../types";
+
 
 type RunStatus = "idle" | "running" | "done" | "error";
 
