@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-* Light theme (default) */
+/* Light theme (default) */
 :root {
   --bg:      #f0f4fb;
   --card:    #ffffff;
@@ -67,9 +67,3 @@ input:focus, textarea:focus {
   outline: none;
   border-color: var(--cyan);
 }
-"""
-
-with open("/mnt/user-data/outputs/globals.css", "w", encoding="ascii", errors="ignore") as f:
-    f.write(css)
-print("globals.css:", len(css), "chars, smart quotes:", sum(1 for c in css if ord(c) in [0x201c,0x201d,0x2018,0x2019]))
-EOF
