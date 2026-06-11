@@ -1,111 +1,86 @@
-// apps/web/app/api/agents/research/route.ts
-// Server-side only — API keys never reach the browser
-
 import { NextRequest, NextResponse } from "next/server";
-import { runResearchAgent } from "@agent-studio/agents";
-import {
-  webSearch,
-  formatSearchResults,
-  buildResearchQuery,
-} from "@agent-studio/tools";
-import type { IntakeFormData } from "@agent-studio/agents";
+import Anthropic from "@anthropic-ai/sdk";
 
-export const maxDuration = 120; // 2 хвилини для Netlify/Vercel
+export const maxDuration = 120;
+
+const SYSTEM_PROMPT = `You are a senior Web3 research analyst. Analyze the client intake form and respond with ONLY a valid JSON object. No markdown, no code fences. Start with { and end with }.
+
+{
+  "projectSummary": "string",
+  "problemAnalysis": { "coreProblem": "string", "severity": "high", "existingSolutions": ["string"], "gap": "string" },
+  "marketContext": { "sector": "string", "tam": "string", "growthTrend": "string", "keyDrivers": ["string"] },
+  "competitiveAnalysis": [{ "name": "string", "type": "string", "strengths": ["string"], "weaknesses": ["string"], "differentiationOpportunity": "string" }],
+  "technicalLandscape": { "recommendedStack": "string", "recommendedBlockchain": "string", "blockchainRationale": "string", "keyLibraries": ["string"], "knownRisks": ["string"], "architectureNotes": "string" },
+  "teamAssessment": { "size": 1, "capability": "string", "timelineFeasibility": "string", "recommendedMvpScope": "string", "skillGaps": ["string"] },
+  "redFlags": ["string"],
+  "opportunities": ["string"],
+  "researchConfidence": "high",
+  "notesForWriter": "string"
+}`;
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { projectId, intakeData } = body as {
-      projectId: string;
-      intakeData: IntakeFormData;
-    };
+    const { projectId, intakeData } = body;
 
-    // Валідація
     if (!projectId || !intakeData?.projectName) {
-      return NextResponse.json(
-        { error: "projectId and intakeData.projectName are required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "projectId and intakeData.projectName are required" }, { status: 400 });
     }
 
-    const anthropicKey = process.env.ANTHROPIC_API_KEY;
-    if (!anthropicKey) {
-      return NextResponse.json(
-        { error: "ANTHROPIC_API_KEY not configured" },
-        { status: 500 }
-      );
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json({ error: "ANTHROPIC_API_KEY not configured" }, { status: 500 });
     }
 
-    // Опціональний веб-пошук (якщо є Tavily key)
-    let webSearchResults: string | undefined;
-    const tavilyKey = process.env.TAVILY_API_KEY;
+    const client = new Anthropic({ apiKey });
+    const startTime = Date.now();
 
-    if (tavilyKey) {
-      const query = buildResearchQuery(
-        intakeData.projectName,
-        intakeData.competitors,
-        intakeData.blockchain
-      );
-      const results = await webSearch(query, tavilyKey, {
-        maxResults: 5,
-        searchDepth: "advanced",
-      });
-      if (results && results.length > 0) {
-        webSearchResults = formatSearchResults(results);
-      }
-    }
+    const userMessage = `PROJECT INTAKE FORM:
+Name: ${intakeData.projectName}
+Concept: ${intakeData.concept}
+Problem: ${intakeData.problem}
+Audience: ${intakeData.targetAudience}
+Blockchain: ${intakeData.blockchain}
+Existing Code: ${intakeData.existingCode}
+Competitors: ${intakeData.competitors}
+Team: ${intakeData.teamInfo}
+Timeline: ${intakeData.timeline}
+Budget: ${intakeData.budget}
+Document Needs: ${intakeData.documentNeeds}`;
 
-    // Запускаємо Research Agent
-    const output = await runResearchAgent(
-      { projectId, data: intakeData },
-      anthropicKey,
-      webSearchResults
-    );
-
-    // Зберігаємо результат в Supabase (server-side)
-    if (output.success && output.data) {
-      await saveAgentRun(projectId, "research", intakeData, output);
-    }
-
-    return NextResponse.json(output);
-  } catch (error) {
-    console.error("[/api/agents/research]", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
-  }
-}
-
-// ─── Supabase save ────────────────────────────────────────────────────────────
-
-async function saveAgentRun(
-  projectId: string,
-  agentName: string,
-  input: IntakeFormData,
-  output: Awaited<ReturnType<typeof runResearchAgent>>
-) {
-  try {
-    const { createClient } = await import("@supabase/supabase-js");
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-
-    await supabase.from("as_agent_runs").insert({
-      project_id: projectId,
-      agent_name: agentName,
-      status: output.success ? "completed" : "failed",
-      input_data: input,
-      output_data: output.data ?? null,
-      tokens_in: output.meta.inputTokens,
-      tokens_out: output.meta.outputTokens,
-      cost_usd: output.meta.costUsd,
-      duration_ms: output.meta.durationMs,
-      error: output.error ?? null,
+    const response = await client.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 4000,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: "user", content: userMessage }],
     });
-  } catch (err) {
-    // Не фейлимо основний запит якщо DB запис не вдався
-    console.error("[saveAgentRun] DB error:", err);
+
+    const durationMs = Date.now() - startTime;
+    const raw = response.content.filter((b) => b.type === "text").map((b) => (b as { type: "text"; text: string }).text).join("").trim();
+    const clean = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+
+    let data;
+    try {
+      data = JSON.parse(clean);
+    } catch {
+      const match = clean.match(/\{[\s\S]*\}/);
+      if (match) data = JSON.parse(match[0]);
+      else throw new Error("Failed to parse response");
+    }
+
+    return NextResponse.json({
+      success: true,
+      data,
+      meta: {
+        agentName: "research",
+        durationMs,
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+        costUsd: (response.usage.input_tokens / 1000000) * 3 + (response.usage.output_tokens / 1000000) * 15,
+        toolCallsCount: 0,
+      },
+    });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
   }
 }
