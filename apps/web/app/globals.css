@@ -1,35 +1,75 @@
 @import "tailwindcss";
 
+* Light theme (default) */
 :root {
-  --bg: #07090f;
-  --card: #0b0e18;
-  --card2: #0f1220;
-  --border: #1e2540;
-  --border2: #2a3560;
-  --text: #c8d8f0;
-  --bright: #eef4ff;
-  --dim: #7a90b8;
-  --cyan: #00d4ff;
-  --green: #2ecc8f;
-  --purple: #8b7ff0;
-  --orange: #f0843a;
-  --red: #e05555;
-  --yellow: #e0b84a;
+  --bg:      #f0f4fb;
+  --card:    #ffffff;
+  --card2:   #e8eef8;
+  --border:  #d0daf0;
+  --border2: #b8c8e8;
+  --text:    #2a3a5c;
+  --bright:  #0a1428;
+  --dim:     #6878a0;
+  --cyan:    #0066cc;
+  --green:   #0a7a50;
+  --purple:  #5040b8;
+  --orange:  #b05010;
+  --red:     #b02828;
+  --yellow:  #906010;
+  --shadow:  rgba(40,60,120,0.10);
 }
 
-* { box-sizing: border-box; }
+/* Dark theme */
+[data-theme="dark"] {
+  --bg:      #07090f;
+  --card:    #0b0e18;
+  --card2:   #0f1220;
+  --border:  #1e2540;
+  --border2: #2a3560;
+  --text:    #c8d8f0;
+  --bright:  #eef4ff;
+  --dim:     #7a90b8;
+  --cyan:    #00d4ff;
+  --green:   #2ecc8f;
+  --purple:  #8b7ff0;
+  --orange:  #f0843a;
+  --red:     #e05555;
+  --yellow:  #e0b84a;
+  --shadow:  rgba(0,0,0,0.3);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
 
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
 
-body { font-family: 'IBM Plex Mono', 'Courier New', monospace; }
+body {
+  font-family: 'IBM Plex Mono', 'Courier New', monospace;
+  background: var(--bg);
+  color: var(--text);
+  transition: background 0.25s, color 0.25s;
+}
 
 input, textarea {
-  color: var(--bright) !important;
+  color: var(--bright);
+  background: var(--card2);
+  border: 1px solid var(--border2);
+  transition: border-color 0.2s;
 }
 
 input::placeholder, textarea::placeholder {
-  color: var(--dim) !important;
+  color: var(--dim);
   opacity: 1;
 }
+
+input:focus, textarea:focus {
+  outline: none;
+  border-color: var(--cyan);
+}
+"""
+
+with open("/mnt/user-data/outputs/globals.css", "w", encoding="ascii", errors="ignore") as f:
+    f.write(css)
+print("globals.css:", len(css), "chars, smart quotes:", sum(1 for c in css if ord(c) in [0x201c,0x201d,0x2018,0x2019]))
+EOF
