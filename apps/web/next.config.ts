@@ -1,7 +1,5 @@
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {
-  transpilePackages: ["@agent-studio/agents", "@agent-studio/tools"],
-};
+const nextConfig: NextConfig = {};
 
 export default nextConfig;
