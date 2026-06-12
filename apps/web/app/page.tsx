@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export default function DashboardPage() {
 return (
-<main style={{ maxWidth: 720, margin: “0 auto”, padding: “32px 20px” }}>
+<main style={{ maxWidth: 720, margin: "0 auto", padding: "32px 20px" }}>
 
 ```
   <div style={{ marginBottom: 32 }}>
