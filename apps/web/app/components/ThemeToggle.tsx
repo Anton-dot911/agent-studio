@@ -4,12 +4,11 @@ export default function ThemeToggle() {
 const [dark, setDark] = useState(false);
 useEffect(() => {
 const saved = localStorage.getItem("theme");
-if (saved === "dark") {
+if (saved === "dark");
+{
 setDark(true);
-document.documentElement.setAttribute("data-theme")
+document.documentElement.setAttribute("data-theme", "dark");
   
-}
-"dark");
 }, []);
 const toggle = () => {
 const next = !dark;
