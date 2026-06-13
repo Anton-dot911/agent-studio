@@ -1,69 +1,63 @@
 @import "tailwindcss";
 
-/* Light theme (default) */
+/* ===== Light (neumorphic) - default ===== */
 :root {
-  --bg:      #f0f4fb;
-  --card:    #ffffff;
-  --card2:   #e8eef8;
-  --border:  #d0daf0;
-  --border2: #b8c8e8;
-  --text:    #2a3a5c;
-  --bright:  #0a1428;
-  --dim:     #6878a0;
-  --cyan:    #0066cc;
-  --green:   #0a7a50;
-  --purple:  #5040b8;
-  --orange:  #b05010;
-  --red:     #b02828;
-  --yellow:  #906010;
-  --shadow:  rgba(40,60,120,0.10);
+  --bg:        #e4e7f0;
+  --card:      #eaedf5;
+  --card2:     #e0e3ec;
+  --text:      #4a5578;
+  --bright:    #1c2440;
+  --dim:       #8b96b5;
+  --cyan:      #1f9ed8;
+  --green:     #1aa06d;
+  --purple:    #6a5fd0;
+  --accent:    #1f9ed8;
+  /* neumorphic shadows */
+  --sh-light:  #ffffff;
+  --sh-dark:   #c4c9d8;
+  --nm-out:    6px 6px 14px var(--sh-dark), -6px -6px 14px var(--sh-light);
+  --nm-out-sm: 4px 4px 9px var(--sh-dark), -4px -4px 9px var(--sh-light);
+  --nm-in:     inset 4px 4px 9px var(--sh-dark), inset -4px -4px 9px var(--sh-light);
 }
 
-/* Dark theme */
+/* ===== Dark (neumorphic) ===== */
 [data-theme="dark"] {
-  --bg:      #07090f;
-  --card:    #0b0e18;
-  --card2:   #0f1220;
-  --border:  #1e2540;
-  --border2: #2a3560;
-  --text:    #c8d8f0;
-  --bright:  #eef4ff;
-  --dim:     #7a90b8;
-  --cyan:    #00d4ff;
-  --green:   #2ecc8f;
-  --purple:  #8b7ff0;
-  --orange:  #f0843a;
-  --red:     #e05555;
-  --yellow:  #e0b84a;
-  --shadow:  rgba(0,0,0,0.3);
+  --bg:        #1c2030;
+  --card:      #1e2333;
+  --card2:     #20263a;
+  --text:      #b4c0e0;
+  --bright:    #eef3ff;
+  --dim:       #6b779c;
+  --cyan:      #3fc6ff;
+  --green:     #34d399;
+  --purple:    #9a8bff;
+  --accent:    #3fc6ff;
+  --sh-light:  #262c40;
+  --sh-dark:   #12151f;
+  --nm-out:    6px 6px 14px var(--sh-dark), -6px -6px 14px var(--sh-light);
+  --nm-out-sm: 4px 4px 9px var(--sh-dark), -4px -4px 9px var(--sh-light);
+  --nm-in:     inset 4px 4px 9px var(--sh-dark), inset -4px -4px 9px var(--sh-light);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
-::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+::-webkit-scrollbar-thumb { background: var(--dim); border-radius: 2px; }
 
 body {
   font-family: 'IBM Plex Mono', 'Courier New', monospace;
   background: var(--bg);
   color: var(--text);
-  transition: background 0.25s, color 0.25s;
+  transition: background 0.3s, color 0.3s;
 }
 
 input, textarea {
   color: var(--bright);
-  background: var(--card2);
-  border: 1px solid var(--border2);
-  transition: border-color 0.2s;
+  background: var(--bg);
+  box-shadow: var(--nm-in);
+  border: none;
+  transition: box-shadow 0.2s;
 }
-
-input::placeholder, textarea::placeholder {
-  color: var(--dim);
-  opacity: 1;
-}
-
-input:focus, textarea:focus {
-  outline: none;
-  border-color: var(--cyan);
-}
+input::placeholder, textarea::placeholder { color: var(--dim); opacity: 1; }
+input:focus, textarea:focus { outline: none; box-shadow: var(--nm-in), 0 0 0 1px var(--accent); }
