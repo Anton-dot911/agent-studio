@@ -9,12 +9,12 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.30.0",
-    "@supabase/supabase-js": "^2.45.0",
+    "@anthropic-ai/sdk": "latest",
+    "@supabase/supabase-js": "latest",
     "next": "16.1.5",
     "react": "^19.1.2",
     "react-dom": "^19.1.2",
-    "resend": "^4.0.0"
+    "resend": "latest"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
@@ -25,5 +25,8 @@
     "tailwindcss": "^4.0.0",
     "@tailwindcss/postcss": "^4.0.0",
     "typescript": "^5.8.0"
+  }
+overrides": {
+    "node-domexception": false
   }
 }
