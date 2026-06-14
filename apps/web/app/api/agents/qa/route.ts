@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 
 export const maxDuration = 60;
@@ -44,23 +44,33 @@ RULES:
 - Be honest and specific. This is a paid deliverable.`;
 
 export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json();
-    const { techSpec, researchReport } = body;
+  const body = await req.json();
+  const { techSpec, researchReport } = body;
 
-    if (!techSpec?.title || !researchReport) {
-      return NextResponse.json({ error: "techSpec and researchReport are required" }, { status: 400 });
-    }
+  if (!techSpec?.title || !researchReport) {
+    return new Response(JSON.stringify({ error: "techSpec and researchReport are required" }), { status: 400 });
+  }
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ error: "ANTHROPIC_API_KEY not configured" }, { status: 500 });
-    }
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    return new Response(JSON.stringify({ error: "ANTHROPIC_API_KEY not configured" }), { status: 500 });
+  }
 
-    const client = new Anthropic({ apiKey });
-    const startTime = Date.now();
+  const client = new Anthropic({ apiKey });
+  const encoder = new TextEncoder();
 
-    const userMessage = `TECH SPEC TO REVIEW:
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (data: object) =>
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+
+      const hb = setInterval(() =>
+        controller.enqueue(encoder.encode(`: heartbeat\n\n`)), 5000);
+
+      try {
+        const startTime = Date.now();
+
+        const userMessage = `TECH SPEC TO REVIEW:
 ${JSON.stringify(techSpec, null, 2)}
 
 ORIGINAL RESEARCH REPORT (for fact-checking):
@@ -68,38 +78,49 @@ ${JSON.stringify(researchReport, null, 2)}
 
 Review this document and return your QA report as JSON.`;
 
-    const response = await client.messages.create({
-      model: MODEL,
-      max_tokens: 2000,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: userMessage }],
-    });
+        const response = await client.messages.create({
+          model: MODEL,
+          max_tokens: 2000,
+          system: SYSTEM_PROMPT,
+          messages: [{ role: "user", content: userMessage }],
+        });
 
-    const durationMs = Date.now() - startTime;
-    const raw = response.content.map((b) => b.type === "text" ? (b as { type: "text"; text: string }).text : "").join("").trim();
-    const clean = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+        const raw = response.content
+          .map(b => b.type === "text" ? (b as { type: "text"; text: string }).text : "")
+          .join("").trim();
+        const clean = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```\s*$/i, "").trim();
 
-    let data;
-    try {
-      data = JSON.parse(clean);
-    } catch {
-      const match = clean.match(/\{[\s\S]*\}/);
-      if (match) data = JSON.parse(match[0]);
-      else throw new Error("Failed to parse QA response");
-    }
+        let data;
+        try { data = JSON.parse(clean); }
+        catch { const m = clean.match(/\{[\s\S]*\}/); if (m) data = JSON.parse(m[0]); else throw new Error("Failed to parse QA response"); }
 
-    return NextResponse.json({
-      success: true,
-      data,
-      meta: {
-        agentName: "qa",
-        durationMs,
-        inputTokens: response.usage.input_tokens,
-        outputTokens: response.usage.output_tokens,
-        costUsd: (response.usage.input_tokens / 1_000_000) * 3 + (response.usage.output_tokens / 1_000_000) * 15,
-      },
-    });
-  } catch (error) {
-    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
-  }
+        send({
+          type: "done",
+          success: true,
+          data,
+          meta: {
+            agentName: "qa",
+            durationMs: Date.now() - startTime,
+            inputTokens: response.usage.input_tokens,
+            outputTokens: response.usage.output_tokens,
+            costUsd: (response.usage.input_tokens / 1_000_000) * 3 + (response.usage.output_tokens / 1_000_000) * 15,
+          },
+        });
+      } catch (error) {
+        send({ type: "error", success: false, error: error instanceof Error ? error.message : "Unknown error" });
+      } finally {
+        clearInterval(hb);
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      "Connection": "keep-alive",
+      "X-Accel-Buffering": "no",
+    },
+  });
 }
