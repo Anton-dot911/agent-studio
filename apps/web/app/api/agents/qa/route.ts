@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
 
+export const runtime = "edge";
 export const maxDuration = 60;
 
 const MODEL = "claude-sonnet-4-6";
@@ -43,9 +43,14 @@ RULES:
 - humanChecklist: 3-5 items a human should verify before sending to client.
 - Be honest and specific. This is a paid deliverable.`;
 
+interface AnthropicResponse {
+  content: Array<{ type: string; text: string }>;
+  usage: { input_tokens: number; output_tokens: number };
+}
+
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { techSpec, researchReport } = body;
+  const { techSpec, researchReport } = body as { techSpec: { title: string }; researchReport: unknown };
 
   if (!techSpec?.title || !researchReport) {
     return new Response(JSON.stringify({ error: "techSpec and researchReport are required" }), { status: 400 });
@@ -56,7 +61,6 @@ export async function POST(req: NextRequest) {
     return new Response(JSON.stringify({ error: "ANTHROPIC_API_KEY not configured" }), { status: 500 });
   }
 
-  const client = new Anthropic({ apiKey });
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
@@ -65,7 +69,7 @@ export async function POST(req: NextRequest) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
 
       const hb = setInterval(() =>
-        controller.enqueue(encoder.encode(`: heartbeat\n\n`)), 5000);
+        controller.enqueue(encoder.encode(": heartbeat\n\n")), 5000);
 
       try {
         const startTime = Date.now();
@@ -78,16 +82,27 @@ ${JSON.stringify(researchReport, null, 2)}
 
 Review this document and return your QA report as JSON.`;
 
-        const response = await client.messages.create({
-          model: MODEL,
-          max_tokens: 2000,
-          system: SYSTEM_PROMPT,
-          messages: [{ role: "user", content: userMessage }],
+        const apiRes = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: MODEL,
+            max_tokens: 2000,
+            system: SYSTEM_PROMPT,
+            messages: [{ role: "user", content: userMessage }],
+          }),
         });
 
-        const raw = response.content
-          .map(b => b.type === "text" ? (b as { type: "text"; text: string }).text : "")
-          .join("").trim();
+        if (!apiRes.ok) {
+          throw new Error(`Anthropic API error: ${apiRes.status} ${await apiRes.text()}`);
+        }
+
+        const result = await apiRes.json() as AnthropicResponse;
+        const raw = result.content.filter(b => b.type === "text").map(b => b.text).join("").trim();
         const clean = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```\s*$/i, "").trim();
 
         let data;
@@ -101,9 +116,9 @@ Review this document and return your QA report as JSON.`;
           meta: {
             agentName: "qa",
             durationMs: Date.now() - startTime,
-            inputTokens: response.usage.input_tokens,
-            outputTokens: response.usage.output_tokens,
-            costUsd: (response.usage.input_tokens / 1_000_000) * 3 + (response.usage.output_tokens / 1_000_000) * 15,
+            inputTokens: result.usage.input_tokens,
+            outputTokens: result.usage.output_tokens,
+            costUsd: (result.usage.input_tokens / 1_000_000) * 3 + (result.usage.output_tokens / 1_000_000) * 15,
           },
         });
       } catch (error) {
