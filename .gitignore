@@ -5,6 +5,14 @@ node_modules
 # Next.js
 .next
 out
+next-env.d.ts
+
+# TypeScript build cache
+*.tsbuildinfo
+
+# Lock files (managed per environment)
+package-lock.json
+pnpm-lock.yaml
 
 # Build outputs
 dist
