@@ -1,6 +1,4 @@
-import "@anthropic-ai/sdk/shims/web";
 import { NextRequest } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
 
 export const runtime = "edge";
 export const maxDuration = 120;
@@ -51,9 +49,14 @@ Rules (STRICT - you must finish within a tight time budget):
 - Write concrete technical content grounded in the research. This is a paid client deliverable, so quality over volume.
 - Total output must stay compact. Prioritise finishing all 10 sections over depth in any one.`;
 
+interface AnthropicResponse {
+  content: Array<{ type: string; text: string }>;
+  usage: { input_tokens: number; output_tokens: number };
+}
+
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { intakeData, researchReport } = body;
+  const { intakeData, researchReport } = body as { intakeData: Record<string, string>; researchReport: unknown };
 
   if (!intakeData?.projectName || !researchReport) {
     return new Response(JSON.stringify({ error: "intakeData.projectName and researchReport are required" }), { status: 400 });
@@ -64,7 +67,6 @@ export async function POST(req: NextRequest) {
     return new Response(JSON.stringify({ error: "ANTHROPIC_API_KEY not configured" }), { status: 500 });
   }
 
-  const client = new Anthropic({ apiKey });
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
@@ -73,7 +75,7 @@ export async function POST(req: NextRequest) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
 
       const hb = setInterval(() =>
-        controller.enqueue(encoder.encode(`: heartbeat\n\n`)), 5000);
+        controller.enqueue(encoder.encode(": heartbeat\n\n")), 5000);
 
       try {
         const startTime = Date.now();
@@ -96,16 +98,27 @@ ${JSON.stringify(researchReport, null, 2)}
 
 Write the full Technical Specification now as the JSON object.`;
 
-        const response = await client.messages.create({
-          model: MODEL,
-          max_tokens: 4500,
-          system: SYSTEM_PROMPT,
-          messages: [{ role: "user", content: userMessage }],
+        const apiRes = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: MODEL,
+            max_tokens: 4500,
+            system: SYSTEM_PROMPT,
+            messages: [{ role: "user", content: userMessage }],
+          }),
         });
 
-        const raw = response.content
-          .map(b => b.type === "text" ? (b as { type: "text"; text: string }).text : "")
-          .join("").trim();
+        if (!apiRes.ok) {
+          throw new Error(`Anthropic API error: ${apiRes.status} ${await apiRes.text()}`);
+        }
+
+        const result = await apiRes.json() as AnthropicResponse;
+        const raw = result.content.filter(b => b.type === "text").map(b => b.text).join("").trim();
         const clean = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```\s*$/i, "").trim();
 
         let data;
@@ -119,9 +132,9 @@ Write the full Technical Specification now as the JSON object.`;
           meta: {
             agentName: "writer",
             durationMs: Date.now() - startTime,
-            inputTokens: response.usage.input_tokens,
-            outputTokens: response.usage.output_tokens,
-            costUsd: (response.usage.input_tokens / 1_000_000) * 3 + (response.usage.output_tokens / 1_000_000) * 15,
+            inputTokens: result.usage.input_tokens,
+            outputTokens: result.usage.output_tokens,
+            costUsd: (result.usage.input_tokens / 1_000_000) * 3 + (result.usage.output_tokens / 1_000_000) * 15,
           },
         });
       } catch (error) {
