@@ -89,6 +89,26 @@ export interface ResearchReport {
 
 export interface ResearchAgentOutput extends AgentOutput<ResearchReport> {}
 
+// ─── Tech Spec Document ──────────────────────────────────────────────────────
+
+export type DocBlock =
+  | { type: "para"; text: string }
+  | { type: "bullets"; items: string[] }
+  | { type: "highlight"; label: string; text: string }
+  | { type: "table"; headers: string[]; rows: string[][] }
+  | { type: "code"; text: string };
+
+export interface DocSection {
+  label: string;
+  blocks: DocBlock[];
+}
+
+export interface TechSpec {
+  title: string;
+  subtitle: string;
+  sections: DocSection[];
+}
+
 // ─── Writer Agent (Phase 2) ──────────────────────────────────────────────────
 
 export type DocumentType = "tech_spec" | "tokenomics" | "defi_audit";
@@ -100,13 +120,13 @@ export interface WriterAgentInput extends AgentInput {
   };
 }
 
-export interface WriterAgentOutput extends AgentOutput<string> {} // Markdown string
+export interface WriterAgentOutput extends AgentOutput<TechSpec> {}
 
 // ─── QA Agent (Phase 2) ──────────────────────────────────────────────────────
 
 export interface QAAgentInput extends AgentInput {
   data: {
-    documentDraft: string;
+    techSpec: TechSpec;
     researchReport: ResearchReport;
   };
 }
@@ -117,11 +137,31 @@ export interface QAReport {
   criticalIssues: string[];
   majorIssues: string[];
   minorIssues: string[];
-  revisedSections: Record<string, string>;
   humanChecklist: string[];
+  summary: string;
 }
 
 export interface QAAgentOutput extends AgentOutput<QAReport> {}
+
+// ─── Delivery Agent (Phase 2) ────────────────────────────────────────────────
+
+export interface DeliveryAgentInput extends AgentInput {
+  data: {
+    techSpec: TechSpec;
+    clientEmail: string;
+    clientName?: string;
+    projectName: string;
+  };
+}
+
+export interface DeliveryResult {
+  pdfGenerated: boolean;
+  emailSent: boolean;
+  emailId?: string;
+  pdfUrl?: string;
+}
+
+export interface DeliveryAgentOutput extends AgentOutput<DeliveryResult> {}
 
 // ─── Project Status ──────────────────────────────────────────────────────────
 

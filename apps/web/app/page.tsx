@@ -82,13 +82,13 @@ export default function DashboardPage() {
 
       <div style={{ ...card, padding: "22px 20px" }}>
         <p style={{ fontSize: 11, letterSpacing: "3px", textTransform: "uppercase", color: "var(--dim)", marginBottom: 20, fontWeight: 600 }}>
-          Pipeline (Phase 1)
+          Pipeline (Phase 2)
         </p>
         {[
-          { n: "01", name: "Research Agent", active: true, time: "45s", desc: "Analyzes project, competitors, market" },
-          { n: "02", name: "Writer Agent", active: false, time: "60s", desc: "Generates the full technical document" },
-          { n: "03", name: "QA Agent", active: false, time: "30s", desc: "Checks quality and fixes weak sections" },
-          { n: "04", name: "Delivery Agent", active: false, time: "10s", desc: "Sends PDF and email to the client" },
+          { n: "01", name: "Research Agent", active: true, phase: "ACTIVE", time: "45s", desc: "Analyzes project, competitors, market" },
+          { n: "02", name: "Writer Agent", active: true, phase: "ACTIVE", time: "60s", desc: "Generates the full technical document" },
+          { n: "03", name: "QA Agent", active: true, phase: "ACTIVE", time: "30s", desc: "Checks quality, scores document 1-10" },
+          { n: "04", name: "Delivery Agent", active: true, phase: "ACTIVE", time: "10s", desc: "Sends PDF and email to the client" },
         ].map((step, i, arr) => (
           <div key={step.n} style={{ display: "flex", alignItems: "flex-start", gap: 16, marginBottom: i === arr.length - 1 ? 0 : 18 }}>
             <div style={{
@@ -106,16 +106,7 @@ export default function DashboardPage() {
                 <span style={{ fontSize: 15, fontWeight: 700, color: step.active ? "var(--bright)" : "var(--dim)" }}>
                   {step.name}
                 </span>
-                {step.active ? (
-                  <span style={{
-                    fontSize: 10, fontWeight: 700, letterSpacing: "1px",
-                    padding: "3px 9px", borderRadius: 7,
-                    background: "var(--card)", color: "var(--green)",
-                    boxShadow: "var(--nm-out-sm)",
-                  }}>ACTIVE</span>
-                ) : (
-                  <span style={{ fontSize: 10, color: "var(--dim)", letterSpacing: "1px" }}>PHASE 2</span>
-                )}
+                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "1px", padding: "3px 9px", borderRadius: 7, background: "var(--card)", color: "var(--green)", boxShadow: "var(--nm-out-sm)" }}>{step.phase}</span>
                 <span style={{ fontSize: 11, color: "var(--dim)" }}>{step.time}</span>
               </div>
               <p style={{ fontSize: 13, color: "var(--dim)", lineHeight: 1.5 }}>{step.desc}</p>

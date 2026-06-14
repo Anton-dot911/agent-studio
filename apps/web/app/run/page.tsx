@@ -2,16 +2,37 @@
 import { useState } from "react";
 import Link from "next/link";
 
-type RunStatus = "idle" | "running" | "done" | "error" | "writing" | "document";
+type RunStatus =
+  | "idle"
+  | "running"
+  | "done"
+  | "error"
+  | "writing"
+  | "document"
+  | "qa_checking"
+  | "qa_done"
+  | "delivering"
+  | "delivered";
 
-type Block =
+type DocBlock =
   | { type: "para"; text: string }
   | { type: "bullets"; items: string[] }
   | { type: "highlight"; label: string; text: string }
   | { type: "table"; headers: string[]; rows: string[][] }
   | { type: "code"; text: string };
-type Section = { label: string; blocks: Block[] };
-type TechSpec = { title: string; subtitle: string; sections: Section[] };
+
+interface DocSection { label: string; blocks: DocBlock[] }
+interface TechSpec { title: string; subtitle: string; sections: DocSection[] }
+
+interface QAReport {
+  score: number;
+  status: "approved" | "minor_revisions" | "major_revisions";
+  criticalIssues: string[];
+  majorIssues: string[];
+  minorIssues: string[];
+  humanChecklist: string[];
+  summary: string;
+}
 
 const FIELDS = [
   { key: "projectName", label: "01 - Project Name", hint: "Short name", rows: 0 },
@@ -33,15 +54,19 @@ const INIT: Record<string, string> = {
   timeline: "", budget: "", documentNeeds: "",
 };
 
-const field: React.CSSProperties = {
+const fieldStyle: React.CSSProperties = {
   width: "100%", borderRadius: 12, padding: "13px 15px", fontSize: 14, fontFamily: "inherit",
 };
 
 export default function RunPage() {
   const [form, setForm] = useState<Record<string, string>>(INIT);
   const [status, setStatus] = useState<RunStatus>("idle");
-  const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [researchResult, setResearchResult] = useState<Record<string, unknown> | null>(null);
   const [spec, setSpec] = useState<TechSpec | null>(null);
+  const [qaReport, setQaReport] = useState<QAReport | null>(null);
+  const [clientEmail, setClientEmail] = useState("");
+  const [clientName, setClientName] = useState("");
+  const [deliveryResult, setDeliveryResult] = useState<{ pdfGenerated: boolean; emailSent: boolean } | null>(null);
   const [error, setError] = useState("");
   const [elapsed, setElapsed] = useState(0);
   const [meta, setMeta] = useState<{ costUsd: number; tokens: number } | null>(null);
@@ -49,75 +74,133 @@ export default function RunPage() {
   const set = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }));
   const card = { background: "var(--card)", borderRadius: 16, boxShadow: "var(--nm-out)" } as React.CSSProperties;
 
-  const run = async () => {
-    if (!form.projectName) { setError("Enter a project name to continue"); return; }
-    setStatus("running"); setResult(null); setSpec(null); setError(""); setMeta(null);
+  const startTimer = (cb: (elapsed: number) => void) => {
     const start = Date.now();
-    const t = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 300);
+    const t = setInterval(() => cb(Math.floor((Date.now() - start) / 1000)), 300);
+    return { stop: () => { clearInterval(t); return Math.floor((Date.now() - start) / 1000); } };
+  };
+
+  // ── Step 1: Research ───────────────────────────────────────────────────────
+  const runResearch = async () => {
+    if (!form.projectName) { setError("Enter a project name to continue"); return; }
+    setStatus("running"); setResearchResult(null); setSpec(null); setQaReport(null); setError(""); setMeta(null);
+    const timer = startTimer(s => setElapsed(s));
     try {
       const res = await fetch("/api/agents/research", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId: "p_" + Date.now(), intakeData: form }),
       });
-      clearInterval(t);
-      setElapsed(Math.floor((Date.now() - start) / 1000));
+      const secs = timer.stop(); setElapsed(secs);
       const raw = await res.text();
       let data;
-      try { data = JSON.parse(raw); }
-      catch { throw new Error("Server error (HTTP " + res.status + "): " + raw.slice(0, 220)); }
-      if (!res.ok || !data.success) throw new Error(data.error || ("HTTP " + res.status));
-      setResult(data.data);
+      try { data = JSON.parse(raw); } catch { throw new Error("Server error (HTTP " + res.status + "): " + raw.slice(0, 200)); }
+      if (!res.ok || !data.success) throw new Error(data.error || "HTTP " + res.status);
+      setResearchResult(data.data);
       setMeta({ costUsd: data.meta?.costUsd ?? 0, tokens: (data.meta?.inputTokens ?? 0) + (data.meta?.outputTokens ?? 0) });
       setStatus("done");
     } catch (e) {
-      clearInterval(t);
+      timer.stop();
       setError(e instanceof Error ? e.message : "Something went wrong. Try again.");
       setStatus("error");
     }
   };
 
-  const generateDoc = async () => {
+  // ── Step 2: Writer ─────────────────────────────────────────────────────────
+  const runWriter = async () => {
     setStatus("writing"); setError("");
-    const start = Date.now();
-    const t = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 300);
+    const timer = startTimer(s => setElapsed(s));
     try {
       const res = await fetch("/api/agents/writer", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId: "p_" + Date.now(), intakeData: form, researchReport: result }),
+        body: JSON.stringify({ projectId: "p_" + Date.now(), intakeData: form, researchReport: researchResult }),
       });
-      clearInterval(t);
-      setElapsed(Math.floor((Date.now() - start) / 1000));
+      timer.stop();
       const raw = await res.text();
       let data;
-      try { data = JSON.parse(raw); }
-      catch { throw new Error("Server error (HTTP " + res.status + "): " + raw.slice(0, 220)); }
-      if (!res.ok || !data.success) throw new Error(data.error || ("HTTP " + res.status));
+      try { data = JSON.parse(raw); } catch { throw new Error("Server error (HTTP " + res.status + "): " + raw.slice(0, 200)); }
+      if (!res.ok || !data.success) throw new Error(data.error || "HTTP " + res.status);
       setSpec(data.data);
       setMeta({ costUsd: data.meta?.costUsd ?? 0, tokens: (data.meta?.inputTokens ?? 0) + (data.meta?.outputTokens ?? 0) });
       setStatus("document");
     } catch (e) {
-      clearInterval(t);
+      timer.stop();
       setError(e instanceof Error ? e.message : "Writer failed. Try again.");
       setStatus("done");
     }
   };
 
-  // ---------- DOCUMENT VIEW (corporate template + print) ----------
-  if (status === "document" && spec) {
+  // ── Step 3: QA ────────────────────────────────────────────────────────────
+  const runQA = async () => {
+    setStatus("qa_checking"); setError("");
+    const timer = startTimer(s => setElapsed(s));
+    try {
+      const res = await fetch("/api/agents/qa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ techSpec: spec, researchReport: researchResult }),
+      });
+      timer.stop();
+      const raw = await res.text();
+      let data;
+      try { data = JSON.parse(raw); } catch { throw new Error("Server error (HTTP " + res.status + "): " + raw.slice(0, 200)); }
+      if (!res.ok || !data.success) throw new Error(data.error || "HTTP " + res.status);
+      setQaReport(data.data);
+      setMeta({ costUsd: data.meta?.costUsd ?? 0, tokens: (data.meta?.inputTokens ?? 0) + (data.meta?.outputTokens ?? 0) });
+      setStatus("qa_done");
+    } catch (e) {
+      timer.stop();
+      setError(e instanceof Error ? e.message : "QA failed. Try again.");
+      setStatus("document");
+    }
+  };
+
+  // ── Step 4: Deliver ────────────────────────────────────────────────────────
+  const runDeliver = async () => {
+    if (!clientEmail) { setError("Enter client email to deliver"); return; }
+    setStatus("delivering"); setError("");
+    const timer = startTimer(s => setElapsed(s));
+    try {
+      const res = await fetch("/api/agents/deliver", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ techSpec: spec, clientEmail, clientName, projectName: form.projectName }),
+      });
+      timer.stop();
+      const raw = await res.text();
+      let data;
+      try { data = JSON.parse(raw); } catch { throw new Error("Server error: " + raw.slice(0, 200)); }
+      if (!res.ok || !data.success) throw new Error(data.error || "HTTP " + res.status);
+      setDeliveryResult(data.data);
+      setStatus("delivered");
+    } catch (e) {
+      timer.stop();
+      setError(e instanceof Error ? e.message : "Delivery failed.");
+      setStatus("qa_done");
+    }
+  };
+
+  // ── Document view (with QA toolbar) ───────────────────────────────────────
+  if ((status === "document" || status === "qa_checking" || status === "qa_done" || status === "delivering" || status === "delivered") && spec) {
+    const showQABar = status === "document" || status === "qa_checking";
+    const showQAResult = status === "qa_done" || status === "delivered" || status === "delivering";
+
+    const qaColor = qaReport
+      ? qaReport.score >= 8 ? "var(--green)" : qaReport.score >= 6 ? "#f59e0b" : "#ef4444"
+      : "var(--accent)";
+
     return (
       <>
         <style>{`
           @media screen {
             .doc-wrap { max-width: 760px; margin: 0 auto; padding: 24px 16px 80px; }
             .doc-bar { position: sticky; top: 0; z-index: 10; display: flex; gap: 10px;
-              padding: 12px 0; background: var(--bg); margin-bottom: 18px; flex-wrap: wrap; }
-            .doc-page { background: #ffffff; border-radius: 10px; box-shadow: var(--nm-out);
-              overflow: hidden; color: #1a1a2e; }
+              padding: 12px 0; background: var(--bg); margin-bottom: 18px; flex-wrap: wrap; align-items: center; }
+            .doc-page { background: #ffffff; border-radius: 10px; box-shadow: var(--nm-out); overflow: hidden; color: #1a1a2e; }
           }
           @media print {
-            .doc-bar { display: none !important; }
+            .doc-bar,.qa-panel,.delivery-panel { display: none !important; }
             .doc-wrap { max-width: none; margin: 0; padding: 0; }
             .doc-page { box-shadow: none; border-radius: 0; }
             body { background: #fff !important; }
@@ -125,9 +208,7 @@ export default function RunPage() {
           }
           .doc-page * { font-family: 'Helvetica Neue', Arial, sans-serif; }
           .cover { background: #0055b3; color: #fff; padding: 56px 44px; }
-          .cover .badge { display: inline-block; font-size: 11px; letter-spacing: 2px;
-            text-transform: uppercase; background: rgba(255,255,255,0.18);
-            padding: 6px 12px; border-radius: 4px; margin-bottom: 22px; }
+          .cover .badge { display: inline-block; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; background: rgba(255,255,255,0.18); padding: 6px 12px; border-radius: 4px; margin-bottom: 22px; }
           .cover h1 { font-size: 30px; font-weight: 800; line-height: 1.2; margin-bottom: 12px; }
           .cover p { font-size: 15px; opacity: 0.92; line-height: 1.5; }
           .body { padding: 40px 44px; }
@@ -138,29 +219,131 @@ export default function RunPage() {
           .sec p.para { font-size: 13.5px; line-height: 1.7; color: #2a2a3a; margin-bottom: 12px; }
           .sec ul { margin: 0 0 12px 18px; }
           .sec li { font-size: 13.5px; line-height: 1.7; color: #2a2a3a; margin-bottom: 5px; }
-          .hl { background: #eef4fc; border-left: 4px solid #0055b3; border-radius: 4px;
-            padding: 14px 16px; margin-bottom: 14px; }
-          .hl .hl-label { font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase;
-            color: #0055b3; font-weight: 700; margin-bottom: 6px; }
+          .hl { background: #eef4fc; border-left: 4px solid #0055b3; border-radius: 4px; padding: 14px 16px; margin-bottom: 14px; }
+          .hl .hl-label { font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: #0055b3; font-weight: 700; margin-bottom: 6px; }
           .hl .hl-text { font-size: 13.5px; line-height: 1.6; color: #1a2a44; }
           table.spec { width: 100%; border-collapse: collapse; margin-bottom: 14px; font-size: 12.5px; }
           table.spec th { background: #0055b3; color: #fff; text-align: left; padding: 9px 12px; font-weight: 600; }
           table.spec td { padding: 9px 12px; border-bottom: 1px solid #e3e8f0; color: #2a2a3a; }
           table.spec tr:nth-child(even) td { background: #f6f9fd; }
-          pre.code { background: #0d1530; color: #c8d4f0; padding: 14px 16px; border-radius: 6px;
-            font-size: 12px; line-height: 1.6; overflow-x: auto; margin-bottom: 14px;
-            font-family: 'Courier New', monospace !important; white-space: pre-wrap; }
-          pre.code * { font-family: 'Courier New', monospace !important; }
+          pre.code { background: #0d1530; color: #c8d4f0; padding: 14px 16px; border-radius: 6px; font-size: 12px; line-height: 1.6; overflow-x: auto; margin-bottom: 14px; font-family: 'Courier New', monospace !important; white-space: pre-wrap; }
           .foot { padding: 20px 44px; border-top: 1px solid #e3e8f0; font-size: 11px; color: #8a93a8; }
+          @keyframes spin { to { transform: rotate(360deg); } }
         `}</style>
 
         <div className="doc-wrap">
+          {/* Toolbar */}
           <div className="doc-bar">
             <button onClick={() => setStatus("done")} style={{ fontSize: 12, padding: "9px 16px", borderRadius: 10, background: "var(--card)", boxShadow: "var(--nm-out-sm)", color: "var(--text)", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>Back</button>
             <button onClick={() => window.print()} style={{ fontSize: 12, padding: "9px 18px", borderRadius: 10, background: "var(--accent)", color: "#fff", boxShadow: "var(--nm-out-sm)", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, letterSpacing: "1px", textTransform: "uppercase" }}>Save as PDF</button>
-            {meta && <span style={{ fontSize: 11, padding: "9px 12px", borderRadius: 10, background: "var(--card)", boxShadow: "var(--nm-out-sm)", color: "var(--dim)" }}>{meta.tokens.toLocaleString()} tok / ${meta.costUsd.toFixed(4)}</span>}
+
+            {showQABar && (
+              <button
+                onClick={runQA}
+                disabled={status === "qa_checking"}
+                style={{ fontSize: 12, padding: "9px 18px", borderRadius: 10, background: status === "qa_checking" ? "var(--card)" : "#0f766e", color: status === "qa_checking" ? "var(--dim)" : "#fff", boxShadow: "var(--nm-out-sm)", border: "none", cursor: status === "qa_checking" ? "default" : "pointer", fontFamily: "inherit", fontWeight: 700, letterSpacing: "1px", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 8 }}>
+                {status === "qa_checking" && <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", border: "2px solid var(--dim)", borderTopColor: "transparent", animation: "spin 0.8s linear infinite" }} />}
+                {status === "qa_checking" ? `QA ${elapsed}s` : "Run QA Check"}
+              </button>
+            )}
+
+            {showQAResult && qaReport && (
+              <span style={{ fontSize: 12, padding: "9px 14px", borderRadius: 10, background: "var(--card)", boxShadow: "var(--nm-out-sm)", color: qaColor, fontWeight: 700 }}>
+                QA {qaReport.score}/10 — {qaReport.status.replace(/_/g, " ")}
+              </span>
+            )}
+
+            {meta && <span style={{ fontSize: 11, padding: "9px 12px", borderRadius: 10, background: "var(--card)", boxShadow: "var(--nm-out-sm)", color: "var(--dim)", marginLeft: "auto" }}>{meta.tokens.toLocaleString()} tok / ${meta.costUsd.toFixed(4)}</span>}
           </div>
 
+          {/* QA Panel */}
+          {showQAResult && qaReport && (
+            <div className="qa-panel" style={{ ...card, padding: "20px", marginBottom: 18 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+                <div style={{ width: 52, height: 52, borderRadius: 14, background: qaColor, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 20, fontWeight: 800, flexShrink: 0 }}>{qaReport.score}</div>
+                <div>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: "var(--bright)", marginBottom: 3 }}>QA Report — {qaReport.status.replace(/_/g, " ")}</p>
+                  <p style={{ fontSize: 12.5, color: "var(--dim)", lineHeight: 1.5 }}>{qaReport.summary}</p>
+                </div>
+              </div>
+
+              {qaReport.criticalIssues.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 10, letterSpacing: "2px", textTransform: "uppercase", color: "#ef4444", fontWeight: 700, marginBottom: 6 }}>Critical Issues</p>
+                  {qaReport.criticalIssues.map((iss, i) => <p key={i} style={{ fontSize: 12.5, color: "var(--text)", lineHeight: 1.5, marginBottom: 4 }}>• {iss}</p>)}
+                </div>
+              )}
+
+              {qaReport.majorIssues.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 10, letterSpacing: "2px", textTransform: "uppercase", color: "#f59e0b", fontWeight: 700, marginBottom: 6 }}>Major Issues</p>
+                  {qaReport.majorIssues.map((iss, i) => <p key={i} style={{ fontSize: 12.5, color: "var(--text)", lineHeight: 1.5, marginBottom: 4 }}>• {iss}</p>)}
+                </div>
+              )}
+
+              {qaReport.minorIssues.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 10, letterSpacing: "2px", textTransform: "uppercase", color: "var(--dim)", fontWeight: 700, marginBottom: 6 }}>Minor Issues</p>
+                  {qaReport.minorIssues.map((iss, i) => <p key={i} style={{ fontSize: 12.5, color: "var(--text)", lineHeight: 1.5, marginBottom: 4 }}>• {iss}</p>)}
+                </div>
+              )}
+
+              {qaReport.humanChecklist.length > 0 && (
+                <div style={{ background: "var(--bg)", borderRadius: 10, padding: "12px 14px", marginBottom: 14 }}>
+                  <p style={{ fontSize: 10, letterSpacing: "2px", textTransform: "uppercase", color: "var(--accent)", fontWeight: 700, marginBottom: 8 }}>Human Checklist</p>
+                  {qaReport.humanChecklist.map((item, i) => (
+                    <label key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6, cursor: "pointer" }}>
+                      <input type="checkbox" style={{ marginTop: 2, flexShrink: 0 }} />
+                      <span style={{ fontSize: 12.5, color: "var(--text)", lineHeight: 1.5 }}>{item}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+
+              {/* Delivery form */}
+              {status !== "delivered" && (
+                <div className="delivery-panel">
+                  <p style={{ fontSize: 10, letterSpacing: "2px", textTransform: "uppercase", color: "var(--dim)", fontWeight: 700, marginBottom: 10 }}>Send to Client</p>
+                  <div style={{ display: "flex", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+                    <input
+                      type="email"
+                      placeholder="client@email.com"
+                      value={clientEmail}
+                      onChange={e => setClientEmail(e.target.value)}
+                      style={{ flex: 1, minWidth: 180, borderRadius: 10, padding: "11px 13px", fontSize: 13, fontFamily: "inherit" }}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Client name (optional)"
+                      value={clientName}
+                      onChange={e => setClientName(e.target.value)}
+                      style={{ flex: 1, minWidth: 140, borderRadius: 10, padding: "11px 13px", fontSize: 13, fontFamily: "inherit" }}
+                    />
+                    <button
+                      onClick={runDeliver}
+                      disabled={status === "delivering"}
+                      style={{ padding: "11px 20px", borderRadius: 10, background: "#0055b3", color: "#fff", border: "none", cursor: status === "delivering" ? "default" : "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 12, letterSpacing: "1px", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 8 }}>
+                      {status === "delivering" ? <><span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.4)", borderTopColor: "#fff", animation: "spin 0.8s linear infinite" }} />{elapsed}s</> : "Deliver"}
+                    </button>
+                  </div>
+                  {error && <p style={{ fontSize: 12.5, color: "#ef4444" }}>{error}</p>}
+                </div>
+              )}
+
+              {/* Delivery success */}
+              {status === "delivered" && deliveryResult && (
+                <div style={{ background: "rgba(16, 185, 129, 0.08)", borderRadius: 10, padding: "14px 16px", border: "1px solid rgba(16, 185, 129, 0.2)" }}>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: "var(--green)", marginBottom: 6 }}>Delivered</p>
+                  <p style={{ fontSize: 12.5, color: "var(--text)", lineHeight: 1.6 }}>
+                    {deliveryResult.emailSent ? `Email sent to ${clientEmail}` : "Email delivery skipped (no RESEND_API_KEY configured)"}
+                    {deliveryResult.pdfGenerated ? " · PDF generated via PDFShift" : " · Use Save as PDF for browser print"}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Document */}
           <div className="doc-page">
             <div className="cover">
               <span className="badge">Agent Studio</span>
@@ -187,14 +370,14 @@ export default function RunPage() {
                 </div>
               ))}
             </div>
-            <div className="foot">Generated by Agent Studio - {spec.title} - Confidential</div>
+            <div className="foot">Generated by Agent Studio — {spec.title} — Confidential</div>
           </div>
         </div>
       </>
     );
   }
 
-  // ---------- MAIN FLOW ----------
+  // ── Main flow ──────────────────────────────────────────────────────────────
   return (
     <main style={{ maxWidth: 640, margin: "0 auto", padding: "28px 18px 60px" }}>
       <style>{"input::placeholder,textarea::placeholder{color:var(--dim);opacity:1}@keyframes spin{to{transform:rotate(360deg)}}"}</style>
@@ -202,7 +385,9 @@ export default function RunPage() {
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 26 }}>
         <Link href="/" style={{ color: "var(--dim)", fontSize: 14, textDecoration: "none" }}>Back</Link>
         <span style={{ color: "var(--dim)" }}>/</span>
-        <span style={{ fontSize: 11, letterSpacing: "3px", textTransform: "uppercase", color: "var(--accent)", fontWeight: 700 }}>Research Agent</span>
+        <span style={{ fontSize: 11, letterSpacing: "3px", textTransform: "uppercase", color: "var(--accent)", fontWeight: 700 }}>
+          {status === "done" ? "Research Agent" : status === "writing" ? "Writer Agent" : "Research Agent"}
+        </span>
       </div>
 
       {(status === "idle" || status === "error") && (
@@ -214,13 +399,13 @@ export default function RunPage() {
               <div key={key}>
                 <label style={{ display: "block", fontSize: 10, letterSpacing: "2px", textTransform: "uppercase", color: "var(--dim)", marginBottom: 8, fontWeight: 700 }}>{label}</label>
                 {rows > 0
-                  ? <textarea rows={rows} placeholder={hint} value={form[key]} onChange={e => set(key, e.target.value)} style={{ ...field, resize: "none", lineHeight: 1.6 }} />
-                  : <input type="text" placeholder={hint} value={form[key]} onChange={e => set(key, e.target.value)} style={field} />}
+                  ? <textarea rows={rows} placeholder={hint} value={form[key]} onChange={e => set(key, e.target.value)} style={{ ...fieldStyle, resize: "none", lineHeight: 1.6 }} />
+                  : <input type="text" placeholder={hint} value={form[key]} onChange={e => set(key, e.target.value)} style={fieldStyle} />}
               </div>
             ))}
           </div>
           {error && <div style={{ ...card, padding: "14px 16px", marginBottom: 16, color: "#c83838", fontSize: 13 }}>{error}</div>}
-          <button onClick={run} style={{ width: "100%", padding: "16px", borderRadius: 13, background: "var(--accent)", color: "#fff", fontSize: 12, letterSpacing: "2px", textTransform: "uppercase", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", border: "none", boxShadow: "var(--nm-out-sm)" }}>Run Research Agent</button>
+          <button onClick={runResearch} style={{ width: "100%", padding: "16px", borderRadius: 13, background: "var(--accent)", color: "#fff", fontSize: 12, letterSpacing: "2px", textTransform: "uppercase", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", border: "none", boxShadow: "var(--nm-out-sm)" }}>Run Research Agent</button>
         </div>
       )}
 
@@ -228,32 +413,43 @@ export default function RunPage() {
         <div style={{ textAlign: "center", padding: "90px 0" }}>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 12, color: "var(--accent)" }}>
             <div style={{ width: 22, height: 22, borderRadius: "50%", border: "3px solid var(--accent)", borderTopColor: "transparent", animation: "spin 0.8s linear infinite" }} />
-            <span style={{ fontSize: 14, letterSpacing: "3px", textTransform: "uppercase" }}>{status === "writing" ? "Writing" : "Working"} {elapsed}s</span>
+            <span style={{ fontSize: 14, letterSpacing: "3px", textTransform: "uppercase" }}>{status === "writing" ? "Writing" : "Researching"} {elapsed}s</span>
           </div>
-          <p style={{ fontSize: 13, color: "var(--dim)", marginTop: 18 }}>{status === "writing" ? "Drafting the full technical specification..." : "Analyzing project, market and competitors..."}</p>
+          <p style={{ fontSize: 13, color: "var(--dim)", marginTop: 18 }}>
+            {status === "writing" ? "Drafting the full technical specification..." : "Analyzing project, market and competitors..."}
+          </p>
+          {/* Pipeline progress */}
+          <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 32 }}>
+            {["Research", "Writer", "QA", "Deliver"].map((step, i) => (
+              <div key={step} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ padding: "5px 12px", borderRadius: 8, fontSize: 11, fontWeight: 600, background: (status === "running" && i === 0) || (status === "writing" && i === 1) ? "var(--accent)" : "var(--card)", color: (status === "running" && i === 0) || (status === "writing" && i === 1) ? "#fff" : "var(--dim)", boxShadow: "var(--nm-out-sm)" }}>{step}</div>
+                {i < 3 && <span style={{ color: "var(--dim)", fontSize: 12 }}>→</span>}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
-      {status === "done" && result && (
+      {status === "done" && researchResult && (
         <div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18, flexWrap: "wrap", gap: 10 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
               <div style={{ width: 9, height: 9, borderRadius: "50%", background: "var(--green)" }} />
               <span style={{ fontSize: 13, color: "var(--green)", fontWeight: 600 }}>Research done in {elapsed}s</span>
             </div>
-            <button onClick={() => { setStatus("idle"); setResult(null); setSpec(null); }} style={{ fontSize: 11, padding: "6px 14px", borderRadius: 9, background: "var(--card)", boxShadow: "var(--nm-out-sm)", color: "var(--text)", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>New</button>
+            <button onClick={() => { setStatus("idle"); setResearchResult(null); setSpec(null); }} style={{ fontSize: 11, padding: "6px 14px", borderRadius: 9, background: "var(--card)", boxShadow: "var(--nm-out-sm)", color: "var(--text)", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>New</button>
           </div>
 
-          <button onClick={generateDoc} style={{ ...card, width: "100%", padding: "18px", marginBottom: 18, cursor: "pointer", border: "none", textAlign: "left", display: "block" }}>
+          <button onClick={runWriter} style={{ ...card, width: "100%", padding: "18px", marginBottom: 18, cursor: "pointer", border: "none", textAlign: "left", display: "block" }}>
             <p style={{ fontSize: 10, letterSpacing: "3px", textTransform: "uppercase", color: "var(--accent)", marginBottom: 8, fontWeight: 700 }}>Step 2</p>
             <p style={{ fontSize: 17, fontWeight: 700, color: "var(--bright)", marginBottom: 4 }}>Generate full Tech Spec</p>
-            <p style={{ fontSize: 12.5, color: "var(--dim)", lineHeight: 1.5 }}>Writer Agent turns this research into a client-ready document you can save as PDF.</p>
+            <p style={{ fontSize: 12.5, color: "var(--dim)", lineHeight: 1.5 }}>Writer Agent turns this research into a client-ready document → QA check → deliver by email.</p>
           </button>
 
           {error && <div style={{ ...card, padding: "14px 16px", marginBottom: 16, color: "#c83838", fontSize: 13 }}>{error}</div>}
 
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            {Object.entries(result).map(([key, val]) => {
+            {Object.entries(researchResult).map(([key, val]) => {
               const accent = key === "redFlags" ? "#c83838" : key === "opportunities" ? "var(--green)" : "var(--accent)";
               return (
                 <div key={key} style={{ ...card, overflow: "hidden" }}>
