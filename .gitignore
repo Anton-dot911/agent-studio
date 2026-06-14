@@ -10,8 +10,9 @@ next-env.d.ts
 # TypeScript build cache
 *.tsbuildinfo
 
-# npm lock (project uses pnpm)
+# Lock files (managed per environment)
 package-lock.json
+pnpm-lock.yaml
 
 # Build outputs
 dist
