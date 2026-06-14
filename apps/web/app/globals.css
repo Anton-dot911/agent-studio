@@ -13,7 +13,7 @@
   --purple:    #6a5fd0;
   --accent:    #1f9ed8;
   /* neumorphic shadows */
-  --sh-light:  #ffffff;
+  --sh-light:  #ebebeb;
   --sh-dark:   #c4c9d8;
   --nm-out:    6px 6px 14px var(--sh-dark), -6px -6px 14px var(--sh-light);
   --nm-out-sm: 4px 4px 9px var(--sh-dark), -4px -4px 9px var(--sh-light);
