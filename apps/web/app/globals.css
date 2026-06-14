@@ -5,14 +5,13 @@
   --bg:        #d6d8e0;
   --card:      #e4e4e6;
   --card2:     #dcdce0;
-  --text:      #4a5578;
-  --bright:    #1c2440;
-  --dim:       #8b96b5;
-  --cyan:      #1f9ed8;
-  --green:     #1aa06d;
-  --purple:    #6a5fd0;
-  --accent:    #1f9ed8;
-  /* crisper neumorphic shadows: tighter blur, stronger contrast */
+  --text:      #28304f;
+  --bright:    #0c1430;
+  --dim:       #525d80;
+  --cyan:      #1580b8;
+  --green:     #128055;
+  --purple:    #5246b8;
+  --accent:    #1580b8;
   --sh-light:  #ffffff;
   --sh-dark:   #b0b2bd;
   --nm-out:    4px 4px 8px var(--sh-dark), -4px -4px 8px var(--sh-light);
