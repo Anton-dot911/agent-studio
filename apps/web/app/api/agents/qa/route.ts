@@ -1,3 +1,4 @@
+import "@anthropic-ai/sdk/shims/web";
 import { NextRequest } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 
