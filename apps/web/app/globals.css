@@ -2,28 +2,28 @@
 
 /* ===== Light (neumorphic) - default ===== */
 :root {
-  --bg:        #ddd6e1;
+  --bg:        #d6d8e0;
   --card:      #e4e4e6;
-  --card2:     #e4e4e6;
-  --text:      #000000;
+  --card2:     #dcdce0;
+  --text:      #4a5578;
   --bright:    #1c2440;
   --dim:       #8b96b5;
   --cyan:      #1f9ed8;
   --green:     #1aa06d;
   --purple:    #6a5fd0;
   --accent:    #1f9ed8;
-  /* neumorphic shadows */
-  --sh-light:  #ebf2f8;
-  --sh-dark:   #c4c9d8;
-  --nm-out:    6px 6px 14px var(--sh-dark), -6px -6px 14px var(--sh-light);
-  --nm-out-sm: 4px 4px 9px var(--sh-dark), -4px -4px 9px var(--sh-light);
-  --nm-in:     inset 4px 4px 9px var(--sh-dark), inset -4px -4px 9px var(--sh-light);
+  /* crisper neumorphic shadows: tighter blur, stronger contrast */
+  --sh-light:  #ffffff;
+  --sh-dark:   #b0b2bd;
+  --nm-out:    4px 4px 8px var(--sh-dark), -4px -4px 8px var(--sh-light);
+  --nm-out-sm: 3px 3px 6px var(--sh-dark), -3px -3px 6px var(--sh-light);
+  --nm-in:     inset 3px 3px 6px var(--sh-dark), inset -3px -3px 6px var(--sh-light);
 }
 
 /* ===== Dark (neumorphic) ===== */
 [data-theme="dark"] {
   --bg:        #1c2030;
-  --card:      #1e2333;
+  --card:      #232838;
   --card2:     #20263a;
   --text:      #b4c0e0;
   --bright:    #eef3ff;
@@ -32,11 +32,11 @@
   --green:     #34d399;
   --purple:    #9a8bff;
   --accent:    #3fc6ff;
-  --sh-light:  #262c40;
-  --sh-dark:   #12151f;
-  --nm-out:    6px 6px 14px var(--sh-dark), -6px -6px 14px var(--sh-light);
-  --nm-out-sm: 4px 4px 9px var(--sh-dark), -4px -4px 9px var(--sh-light);
-  --nm-in:     inset 4px 4px 9px var(--sh-dark), inset -4px -4px 9px var(--sh-light);
+  --sh-light:  #2c3346;
+  --sh-dark:   #10131c;
+  --nm-out:    4px 4px 8px var(--sh-dark), -4px -4px 8px var(--sh-light);
+  --nm-out-sm: 3px 3px 6px var(--sh-dark), -3px -3px 6px var(--sh-light);
+  --nm-in:     inset 3px 3px 6px var(--sh-dark), inset -3px -3px 6px var(--sh-light);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
