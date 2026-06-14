@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 
+export const runtime = "edge";
 export const maxDuration = 60;
 
 const MODEL = "claude-sonnet-4-6";
