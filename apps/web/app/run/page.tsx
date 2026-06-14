@@ -80,24 +80,60 @@ export default function RunPage() {
     return { stop: () => { clearInterval(t); return Math.floor((Date.now() - start) / 1000); } };
   };
 
+  // ── SSE fetch helper ───────────────────────────────────────────────────────
+  const fetchSSE = async (
+    url: string,
+    body: object
+  ): Promise<{ data: Record<string, unknown>; meta: Record<string, unknown> }> => {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok || !res.body) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const parts = buf.split("\n\n");
+      buf = parts.pop() ?? "";
+      for (const part of parts) {
+        for (const line of part.split("\n")) {
+          if (!line.startsWith("data: ")) continue;
+          const json = line.slice(6).trim();
+          if (!json) continue;
+          const event = JSON.parse(json) as { type: string; success?: boolean; data?: Record<string, unknown>; meta?: Record<string, unknown>; error?: string };
+          if (event.type === "done") {
+            if (!event.success) throw new Error(event.error || "Agent failed");
+            return { data: event.data ?? {}, meta: event.meta ?? {} };
+          }
+          if (event.type === "error") throw new Error(event.error || "Agent error");
+        }
+      }
+    }
+
+    throw new Error("Stream ended without result");
+  };
+
   // ── Step 1: Research ───────────────────────────────────────────────────────
   const runResearch = async () => {
     if (!form.projectName) { setError("Enter a project name to continue"); return; }
     setStatus("running"); setResearchResult(null); setSpec(null); setQaReport(null); setError(""); setMeta(null);
     const timer = startTimer(s => setElapsed(s));
     try {
-      const res = await fetch("/api/agents/research", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId: "p_" + Date.now(), intakeData: form }),
-      });
+      const { data, meta } = await fetchSSE("/api/agents/research", { projectId: "p_" + Date.now(), intakeData: form });
       const secs = timer.stop(); setElapsed(secs);
-      const raw = await res.text();
-      let data;
-      try { data = JSON.parse(raw); } catch { throw new Error("Server error (HTTP " + res.status + "): " + raw.slice(0, 200)); }
-      if (!res.ok || !data.success) throw new Error(data.error || "HTTP " + res.status);
-      setResearchResult(data.data);
-      setMeta({ costUsd: data.meta?.costUsd ?? 0, tokens: (data.meta?.inputTokens ?? 0) + (data.meta?.outputTokens ?? 0) });
+      setResearchResult(data);
+      setMeta({ costUsd: (meta.costUsd as number) ?? 0, tokens: ((meta.inputTokens as number) ?? 0) + ((meta.outputTokens as number) ?? 0) });
       setStatus("done");
     } catch (e) {
       timer.stop();
@@ -111,18 +147,10 @@ export default function RunPage() {
     setStatus("writing"); setError("");
     const timer = startTimer(s => setElapsed(s));
     try {
-      const res = await fetch("/api/agents/writer", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId: "p_" + Date.now(), intakeData: form, researchReport: researchResult }),
-      });
+      const { data, meta } = await fetchSSE("/api/agents/writer", { projectId: "p_" + Date.now(), intakeData: form, researchReport: researchResult });
       timer.stop();
-      const raw = await res.text();
-      let data;
-      try { data = JSON.parse(raw); } catch { throw new Error("Server error (HTTP " + res.status + "): " + raw.slice(0, 200)); }
-      if (!res.ok || !data.success) throw new Error(data.error || "HTTP " + res.status);
-      setSpec(data.data);
-      setMeta({ costUsd: data.meta?.costUsd ?? 0, tokens: (data.meta?.inputTokens ?? 0) + (data.meta?.outputTokens ?? 0) });
+      setSpec(data as unknown as TechSpec);
+      setMeta({ costUsd: (meta.costUsd as number) ?? 0, tokens: ((meta.inputTokens as number) ?? 0) + ((meta.outputTokens as number) ?? 0) });
       setStatus("document");
     } catch (e) {
       timer.stop();
@@ -136,18 +164,10 @@ export default function RunPage() {
     setStatus("qa_checking"); setError("");
     const timer = startTimer(s => setElapsed(s));
     try {
-      const res = await fetch("/api/agents/qa", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ techSpec: spec, researchReport: researchResult }),
-      });
+      const { data, meta } = await fetchSSE("/api/agents/qa", { techSpec: spec, researchReport: researchResult });
       timer.stop();
-      const raw = await res.text();
-      let data;
-      try { data = JSON.parse(raw); } catch { throw new Error("Server error (HTTP " + res.status + "): " + raw.slice(0, 200)); }
-      if (!res.ok || !data.success) throw new Error(data.error || "HTTP " + res.status);
-      setQaReport(data.data);
-      setMeta({ costUsd: data.meta?.costUsd ?? 0, tokens: (data.meta?.inputTokens ?? 0) + (data.meta?.outputTokens ?? 0) });
+      setQaReport(data as unknown as QAReport);
+      setMeta({ costUsd: (meta.costUsd as number) ?? 0, tokens: ((meta.inputTokens as number) ?? 0) + ((meta.outputTokens as number) ?? 0) });
       setStatus("qa_done");
     } catch (e) {
       timer.stop();
