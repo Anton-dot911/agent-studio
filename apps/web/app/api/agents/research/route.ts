@@ -73,7 +73,7 @@ Document Needs: ${intakeData.documentNeeds}`;
           },
           body: JSON.stringify({
             model: MODEL,
-            max_tokens: 3000,
+            max_tokens: 3500,
             system: SYSTEM_PROMPT,
             messages: [{ role: "user", content: userMessage }],
             stream: true,

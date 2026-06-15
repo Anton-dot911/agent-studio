@@ -106,7 +106,7 @@ Apply all fixes and return the improved Tech Spec as JSON.`;
           },
           body: JSON.stringify({
             model: MODEL,
-            max_tokens: 4500,
+            max_tokens: 5500,
             system: SYSTEM_PROMPT,
             messages: [{ role: "user", content: userMessage }],
             stream: true,
