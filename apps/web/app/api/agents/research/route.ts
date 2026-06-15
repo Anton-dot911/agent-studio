@@ -3,7 +3,7 @@ import { NextRequest } from "next/server";
 export const runtime = "edge";
 export const maxDuration = 120;
 
-const MODEL = "claude-sonnet-4-6";
+const MODEL = "claude-haiku-4-5-20251001";
 
 const SYSTEM_PROMPT = `You are a senior Web3 research analyst. Analyze the client intake form and respond with ONLY a valid JSON object. No markdown, no code fences. Start with { and end with }.
 
@@ -73,7 +73,7 @@ Document Needs: ${intakeData.documentNeeds}`;
           },
           body: JSON.stringify({
             model: MODEL,
-            max_tokens: 4000,
+            max_tokens: 3000,
             system: SYSTEM_PROMPT,
             messages: [{ role: "user", content: userMessage }],
             stream: true,

@@ -106,7 +106,7 @@ Write the full Technical Specification now as the JSON object.`;
           },
           body: JSON.stringify({
             model: MODEL,
-            max_tokens: 4500,
+            max_tokens: 2000,
             system: SYSTEM_PROMPT,
             messages: [{ role: "user", content: userMessage }],
             stream: true,
