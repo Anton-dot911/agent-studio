@@ -3,7 +3,7 @@ import { NextRequest } from "next/server";
 export const runtime = "edge";
 export const maxDuration = 120;
 
-const MODEL = "claude-sonnet-4-6";
+const MODEL = "claude-haiku-4-5-20251001";
 
 const SYSTEM_PROMPT = `You are a senior Web3 technical writer. You receive a research report and intake data for a blockchain project, and you produce a complete, professional Technical Specification document.
 
@@ -106,7 +106,7 @@ Write the full Technical Specification now as the JSON object.`;
           },
           body: JSON.stringify({
             model: MODEL,
-            max_tokens: 2000,
+            max_tokens: 3500,
             system: SYSTEM_PROMPT,
             messages: [{ role: "user", content: userMessage }],
             stream: true,
