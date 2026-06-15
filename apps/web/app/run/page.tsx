@@ -11,6 +11,7 @@ type RunStatus =
   | "document"
   | "qa_checking"
   | "qa_done"
+  | "revising"
   | "delivering"
   | "delivered";
 
@@ -176,6 +177,24 @@ export default function RunPage() {
     }
   };
 
+  // ── Step 3b: Revise ────────────────────────────────────────────────────────
+  const runRevise = async () => {
+    setStatus("revising"); setError("");
+    const timer = startTimer(s => setElapsed(s));
+    try {
+      const { data, meta } = await fetchSSE("/api/agents/revise", { techSpec: spec, qaReport, intakeData: form });
+      timer.stop();
+      setSpec(data as unknown as TechSpec);
+      setQaReport(null);
+      setMeta({ costUsd: (meta.costUsd as number) ?? 0, tokens: ((meta.inputTokens as number) ?? 0) + ((meta.outputTokens as number) ?? 0) });
+      setStatus("document");
+    } catch (e) {
+      timer.stop();
+      setError(e instanceof Error ? e.message : "Revision failed. Try again.");
+      setStatus("qa_done");
+    }
+  };
+
   // ── Step 4: Deliver ────────────────────────────────────────────────────────
   const runDeliver = async () => {
     if (!clientEmail) { setError("Enter client email to deliver"); return; }
@@ -202,9 +221,9 @@ export default function RunPage() {
   };
 
   // ── Document view (with QA toolbar) ───────────────────────────────────────
-  if ((status === "document" || status === "qa_checking" || status === "qa_done" || status === "delivering" || status === "delivered") && spec) {
+  if ((status === "document" || status === "qa_checking" || status === "qa_done" || status === "revising" || status === "delivering" || status === "delivered") && spec) {
     const showQABar = status === "document" || status === "qa_checking";
-    const showQAResult = status === "qa_done" || status === "delivered" || status === "delivering";
+    const showQAResult = status === "qa_done" || status === "revising" || status === "delivered" || status === "delivering";
 
     const qaColor = qaReport
       ? qaReport.score >= 8 ? "var(--green)" : qaReport.score >= 6 ? "#f59e0b" : "#ef4444"
@@ -320,8 +339,29 @@ export default function RunPage() {
                 </div>
               )}
 
+              {/* Revise button */}
+              {status === "qa_done" && qaReport && (qaReport.criticalIssues.length > 0 || qaReport.majorIssues.length > 0 || qaReport.minorIssues.length > 0) && (
+                <div style={{ marginBottom: 14 }}>
+                  <button
+                    onClick={runRevise}
+                    style={{ width: "100%", padding: "12px 18px", borderRadius: 10, background: "var(--accent)", color: "#fff", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 12, letterSpacing: "1px", textTransform: "uppercase" }}>
+                    Apply AI Revisions
+                  </button>
+                  <p style={{ fontSize: 11, color: "var(--dim)", marginTop: 6, textAlign: "center" }}>AI will fix the issues above and regenerate the document</p>
+                </div>
+              )}
+
+              {status === "revising" && (
+                <div style={{ marginBottom: 14, textAlign: "center", padding: "12px 0" }}>
+                  <div style={{ display: "inline-flex", alignItems: "center", gap: 10, color: "var(--accent)" }}>
+                    <div style={{ width: 16, height: 16, borderRadius: "50%", border: "2px solid var(--accent)", borderTopColor: "transparent", animation: "spin 0.8s linear infinite" }} />
+                    <span style={{ fontSize: 12, letterSpacing: "2px", textTransform: "uppercase", fontWeight: 700 }}>Revising {elapsed}s</span>
+                  </div>
+                </div>
+              )}
+
               {/* Delivery form */}
-              {status !== "delivered" && (
+              {status !== "delivered" && status !== "revising" && (
                 <div className="delivery-panel">
                   <p style={{ fontSize: 10, letterSpacing: "2px", textTransform: "uppercase", color: "var(--dim)", fontWeight: 700, marginBottom: 10 }}>Send to Client</p>
                   <div style={{ display: "flex", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
