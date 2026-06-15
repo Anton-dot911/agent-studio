@@ -43,9 +43,11 @@ RULES:
 - humanChecklist: 3-5 items a human should verify before sending to client.
 - Be honest and specific. This is a paid deliverable.`;
 
-interface AnthropicResponse {
-  content: Array<{ type: string; text: string }>;
-  usage: { input_tokens: number; output_tokens: number };
+interface AnthropicStreamEvent {
+  type: string;
+  message?: { usage?: { input_tokens: number; output_tokens: number } };
+  delta?: { type?: string; text?: string };
+  usage?: { output_tokens: number };
 }
 
 export async function POST(req: NextRequest) {
@@ -67,9 +69,6 @@ export async function POST(req: NextRequest) {
     async start(controller) {
       const send = (data: object) =>
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
-
-      const hb = setInterval(() =>
-        controller.enqueue(encoder.encode(": heartbeat\n\n")), 5000);
 
       try {
         const startTime = Date.now();
@@ -94,17 +93,55 @@ Review this document and return your QA report as JSON.`;
             max_tokens: 2000,
             system: SYSTEM_PROMPT,
             messages: [{ role: "user", content: userMessage }],
+            stream: true,
           }),
         });
 
-        if (!apiRes.ok) {
-          throw new Error(`Anthropic API error: ${apiRes.status} ${await apiRes.text()}`);
+        if (!apiRes.ok || !apiRes.body) {
+          const errText = await apiRes.text();
+          throw new Error(`Anthropic API error: ${apiRes.status} ${errText}`);
         }
 
-        const result = await apiRes.json() as AnthropicResponse;
-        const raw = result.content.filter(b => b.type === "text").map(b => b.text).join("").trim();
-        const clean = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+        const reader = apiRes.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        let fullText = "";
+        let inputTokens = 0;
+        let outputTokens = 0;
 
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buf += decoder.decode(value, { stream: true });
+          const parts = buf.split("\n\n");
+          buf = parts.pop() ?? "";
+
+          for (const part of parts) {
+            for (const line of part.split("\n")) {
+              if (!line.startsWith("data: ")) continue;
+              const json = line.slice(6).trim();
+              if (!json || json === "[DONE]") continue;
+
+              const event = JSON.parse(json) as AnthropicStreamEvent;
+
+              if (event.type === "message_start" && event.message?.usage) {
+                inputTokens = event.message.usage.input_tokens;
+              }
+
+              if (event.type === "content_block_delta" && event.delta?.type === "text_delta" && event.delta.text) {
+                fullText += event.delta.text;
+                send({ type: "progress", len: fullText.length });
+              }
+
+              if (event.type === "message_delta" && event.usage) {
+                outputTokens = event.usage.output_tokens;
+              }
+            }
+          }
+        }
+
+        const clean = fullText.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```\s*$/i, "").trim();
         let data;
         try { data = JSON.parse(clean); }
         catch { const m = clean.match(/\{[\s\S]*\}/); if (m) data = JSON.parse(m[0]); else throw new Error("Failed to parse QA response"); }
@@ -116,15 +153,16 @@ Review this document and return your QA report as JSON.`;
           meta: {
             agentName: "qa",
             durationMs: Date.now() - startTime,
-            inputTokens: result.usage.input_tokens,
-            outputTokens: result.usage.output_tokens,
-            costUsd: (result.usage.input_tokens / 1_000_000) * 3 + (result.usage.output_tokens / 1_000_000) * 15,
+            inputTokens,
+            outputTokens,
+            costUsd: (inputTokens / 1_000_000) * 3 + (outputTokens / 1_000_000) * 15,
           },
         });
       } catch (error) {
-        send({ type: "error", success: false, error: error instanceof Error ? error.message : "Unknown error" });
+        const send2 = (data: object) =>
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+        send2({ type: "error", success: false, error: error instanceof Error ? error.message : "Unknown error" });
       } finally {
-        clearInterval(hb);
         controller.close();
       }
     },
