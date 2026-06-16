@@ -7,6 +7,11 @@ const MODEL = "claude-haiku-4-5-20251001";
 
 const SYSTEM_PROMPT = `You are a senior Web3 research analyst. Analyze the client intake form and respond with ONLY a valid JSON object. No markdown, no code fences. Start with { and end with }.
 
+Focus your analysis on what matters MOST for the requested document type:
+- Tech Spec: technical architecture, stack choices, integration patterns
+- Tokenomics: token economics, market comparables, distribution models, vesting norms
+- DeFi Audit: attack vectors, known vulnerabilities in similar protocols, security patterns
+
 {
   "projectSummary": "string",
   "problemAnalysis": { "coreProblem": "string", "severity": "high", "existingSolutions": ["string"], "gap": "string" },

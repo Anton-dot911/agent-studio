@@ -5,8 +5,7 @@ export const maxDuration = 120;
 
 const MODEL = "claude-haiku-4-5-20251001";
 
-const SYSTEM_PROMPT = `You are a senior Web3 technical writer. You receive a research report and intake data for a blockchain project, and you produce a complete, professional Technical Specification document.
-
+const OUTPUT_STRUCTURE = `
 Respond with ONLY a valid JSON object. No markdown, no code fences. Start with { and end with }.
 
 Structure:
@@ -27,6 +26,19 @@ Structure:
   ]
 }
 
+Rules (STRICT):
+- Each section has 2 to 3 blocks MAX. Be concise and dense.
+- Paragraphs: 2 to 3 sentences each. No filler, no repetition.
+- Bullets: 3 to 5 short items, one line each.
+- Use exactly ONE "highlight" per section for the key takeaway.
+- Use "table" only where specified below. Keep tables to 3 to 5 rows.
+- Use "code" only once or twice total, short snippets (under 12 lines).
+- Write concrete content grounded in the research. This is a paid client deliverable.
+- Prioritise finishing all 10 sections over depth in any one.`;
+
+const TECH_SPEC_PROMPT = `You are a senior Web3 technical writer producing a complete Technical Specification document.
+${OUTPUT_STRUCTURE}
+
 Produce EXACTLY these 10 sections in this order:
 1. Executive Summary
 2. Problem Statement
@@ -39,15 +51,49 @@ Produce EXACTLY these 10 sections in this order:
 9. Deployment Roadmap
 10. Cost Estimation
 
-Rules (STRICT - you must finish within a tight time budget):
-- Each section has 2 to 3 blocks MAX. Be concise and dense.
-- Paragraphs: 2 to 3 sentences each. No filler, no repetition.
-- Bullets: 3 to 5 short items, one line each.
-- Use exactly ONE "highlight" per section for the key takeaway.
-- Use "table" only in Smart Contract Design, Deployment Roadmap (phases + timeline) and Cost Estimation (USD ranges per workstream). Keep tables to 3 to 5 rows.
-- Use "code" only once or twice total, short snippets (under 12 lines).
-- Write concrete technical content grounded in the research. This is a paid client deliverable, so quality over volume.
-- Total output must stay compact. Prioritise finishing all 10 sections over depth in any one.`;
+Use "table" only in: Smart Contract Design (functions), Deployment Roadmap (phases + timeline), Cost Estimation (USD ranges per workstream).`;
+
+const TOKENOMICS_PROMPT = `You are a senior Web3 tokenomics analyst producing a complete Tokenomics document.
+${OUTPUT_STRUCTURE}
+
+Produce EXACTLY these 10 sections in this order:
+1. Executive Summary
+2. Token Overview
+3. Economic Model
+4. Token Distribution
+5. Vesting & Lock-up Schedule
+6. Utility & Demand Drivers
+7. Governance Framework
+8. Market Comparables
+9. Risk Analysis
+10. Launch Roadmap & Cost Estimate
+
+Use "table" only in: Token Distribution (category + % + amount), Vesting & Lock-up Schedule (stakeholder + cliff + vesting period), Launch Roadmap & Cost Estimate (phase + timeline + budget).`;
+
+const DEFI_AUDIT_PROMPT = `You are a senior Web3 security researcher producing a DeFi Audit Preparation document.
+${OUTPUT_STRUCTURE}
+
+Produce EXACTLY these 10 sections in this order:
+1. Executive Summary
+2. Protocol Overview
+3. Architecture & Smart Contracts
+4. Attack Surface Analysis
+5. Access Controls & Permissions
+6. Economic Attack Vectors
+7. Testing & Verification Strategy
+8. Known Vulnerabilities Checklist
+9. Remediation Roadmap
+10. Audit Timeline & Cost Estimate
+
+Use "table" only in: Architecture & Smart Contracts (contract name + purpose + risk level), Known Vulnerabilities Checklist (vulnerability + severity + status), Audit Timeline & Cost Estimate (phase + duration + cost range).
+Use "code" for one representative function signature or interface that illustrates the main risk area.`;
+
+function getSystemPrompt(documentType: string): string {
+  const t = documentType.toLowerCase();
+  if (t.includes("tokenomics") || t.includes("token")) return TOKENOMICS_PROMPT;
+  if (t.includes("audit") || t.includes("defi") || t.includes("security")) return DEFI_AUDIT_PROMPT;
+  return TECH_SPEC_PROMPT;
+}
 
 interface AnthropicStreamEvent {
   type: string;
@@ -70,6 +116,7 @@ export async function POST(req: NextRequest) {
   }
 
   const encoder = new TextEncoder();
+  const systemPrompt = getSystemPrompt(intakeData.documentNeeds ?? "tech spec");
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -90,12 +137,12 @@ Competitors: ${intakeData.competitors}
 Team: ${intakeData.teamInfo}
 Timeline: ${intakeData.timeline}
 Budget: ${intakeData.budget}
-Document Needs: ${intakeData.documentNeeds}
+Document Type: ${intakeData.documentNeeds}
 
 RESEARCH REPORT (JSON):
 ${JSON.stringify(researchReport, null, 2)}
 
-Write the full Technical Specification now as the JSON object.`;
+Write the full document now as the JSON object.`;
 
         const apiRes = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
@@ -107,7 +154,7 @@ Write the full Technical Specification now as the JSON object.`;
           body: JSON.stringify({
             model: MODEL,
             max_tokens: 5500,
-            system: SYSTEM_PROMPT,
+            system: systemPrompt,
             messages: [{ role: "user", content: userMessage }],
             stream: true,
           }),
@@ -171,7 +218,7 @@ Write the full Technical Specification now as the JSON object.`;
             durationMs: Date.now() - startTime,
             inputTokens,
             outputTokens,
-            costUsd: (inputTokens / 1_000_000) * 3 + (outputTokens / 1_000_000) * 15,
+            costUsd: (inputTokens / 1_000_000) * 0.25 + (outputTokens / 1_000_000) * 1.25,
           },
         });
       } catch (error) {

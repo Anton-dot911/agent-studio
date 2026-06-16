@@ -46,14 +46,20 @@ const FIELDS = [
   { key: "teamInfo", label: "08 - Team", hint: "Size and experience", rows: 0 },
   { key: "timeline", label: "09 - Timeline", hint: "MVP in how long?", rows: 0 },
   { key: "budget", label: "10 - Budget", hint: "Less than 10k / 10-50k / 50k+", rows: 0 },
-  { key: "documentNeeds", label: "11 - Document Type", hint: "Tech Spec / Tokenomics / DeFi Audit", rows: 2 },
+  { key: "documentNeeds", label: "11 - Document Type", hint: "", rows: 0 },
 ];
 
 const INIT: Record<string, string> = {
   projectName: "", concept: "", problem: "", targetAudience: "",
   blockchain: "", existingCode: "", competitors: "", teamInfo: "",
-  timeline: "", budget: "", documentNeeds: "",
+  timeline: "", budget: "", documentNeeds: "Tech Spec",
 };
+
+const DOC_TYPES = [
+  { value: "Tech Spec", label: "Tech Spec", desc: "Architecture, contracts, API, deployment" },
+  { value: "Tokenomics", label: "Tokenomics", desc: "Token model, distribution, vesting, governance" },
+  { value: "DeFi Audit", label: "DeFi Audit Prep", desc: "Attack vectors, security controls, remediation" },
+];
 
 const fieldStyle: React.CSSProperties = {
   width: "100%", borderRadius: 12, padding: "13px 15px", fontSize: 14, fontFamily: "inherit",
@@ -165,7 +171,7 @@ export default function RunPage() {
     setStatus("qa_checking"); setError("");
     const timer = startTimer(s => setElapsed(s));
     try {
-      const { data, meta } = await fetchSSE("/api/agents/qa", { techSpec: spec, researchReport: researchResult });
+      const { data, meta } = await fetchSSE("/api/agents/qa", { techSpec: spec, researchReport: researchResult, documentType: form.documentNeeds });
       timer.stop();
       setQaReport(data as unknown as QAReport);
       setMeta({ costUsd: (meta.costUsd as number) ?? 0, tokens: ((meta.inputTokens as number) ?? 0) + ((meta.outputTokens as number) ?? 0) });
@@ -182,7 +188,7 @@ export default function RunPage() {
     setStatus("revising"); setError("");
     const timer = startTimer(s => setElapsed(s));
     try {
-      const { data, meta } = await fetchSSE("/api/agents/revise", { techSpec: spec, qaReport, intakeData: form });
+      const { data, meta } = await fetchSSE("/api/agents/revise", { techSpec: spec, qaReport, intakeData: form, documentType: form.documentNeeds });
       timer.stop();
       setSpec(data as unknown as TechSpec);
       setQaReport(null);
@@ -455,14 +461,35 @@ export default function RunPage() {
           <h2 style={{ fontSize: 25, fontWeight: 800, color: "var(--bright)", marginBottom: 8, letterSpacing: "-0.3px" }}>Intake form</h2>
           <p style={{ fontSize: 14, color: "var(--dim)", marginBottom: 26, lineHeight: 1.6 }}>Fill the fields below. The agent returns its analysis in about 45 seconds.</p>
           <div style={{ display: "flex", flexDirection: "column", gap: 18, marginBottom: 24 }}>
-            {FIELDS.map(({ key, label, hint, rows }) => (
-              <div key={key}>
-                <label style={{ display: "block", fontSize: 10, letterSpacing: "2px", textTransform: "uppercase", color: "var(--dim)", marginBottom: 8, fontWeight: 700 }}>{label}</label>
-                {rows > 0
-                  ? <textarea rows={rows} placeholder={hint} value={form[key]} onChange={e => set(key, e.target.value)} style={{ ...fieldStyle, resize: "none", lineHeight: 1.6 }} />
-                  : <input type="text" placeholder={hint} value={form[key]} onChange={e => set(key, e.target.value)} style={fieldStyle} />}
-              </div>
-            ))}
+            {FIELDS.map(({ key, label, hint, rows }) => {
+              if (key === "documentNeeds") {
+                return (
+                  <div key={key}>
+                    <label style={{ display: "block", fontSize: 10, letterSpacing: "2px", textTransform: "uppercase", color: "var(--dim)", marginBottom: 8, fontWeight: 700 }}>{label}</label>
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                      {DOC_TYPES.map(dt => (
+                        <button
+                          key={dt.value}
+                          type="button"
+                          onClick={() => set("documentNeeds", dt.value)}
+                          style={{ flex: 1, minWidth: 120, padding: "13px 12px", borderRadius: 12, border: form.documentNeeds === dt.value ? "2px solid var(--accent)" : "2px solid transparent", background: form.documentNeeds === dt.value ? "rgba(var(--accent-rgb, 79, 70, 229), 0.08)" : "var(--card)", boxShadow: "var(--nm-out-sm)", cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}>
+                          <p style={{ fontSize: 12, fontWeight: 700, color: form.documentNeeds === dt.value ? "var(--accent)" : "var(--bright)", marginBottom: 3 }}>{dt.label}</p>
+                          <p style={{ fontSize: 11, color: "var(--dim)", lineHeight: 1.4 }}>{dt.desc}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              }
+              return (
+                <div key={key}>
+                  <label style={{ display: "block", fontSize: 10, letterSpacing: "2px", textTransform: "uppercase", color: "var(--dim)", marginBottom: 8, fontWeight: 700 }}>{label}</label>
+                  {rows > 0
+                    ? <textarea rows={rows} placeholder={hint} value={form[key]} onChange={e => set(key, e.target.value)} style={{ ...fieldStyle, resize: "none", lineHeight: 1.6 }} />
+                    : <input type="text" placeholder={hint} value={form[key]} onChange={e => set(key, e.target.value)} style={fieldStyle} />}
+                </div>
+              );
+            })}
           </div>
           {error && <div style={{ ...card, padding: "14px 16px", marginBottom: 16, color: "#c83838", fontSize: 13 }}>{error}</div>}
           <button onClick={runResearch} style={{ width: "100%", padding: "16px", borderRadius: 13, background: "var(--accent)", color: "#fff", fontSize: 12, letterSpacing: "2px", textTransform: "uppercase", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", border: "none", boxShadow: "var(--nm-out-sm)" }}>Run Research Agent</button>
