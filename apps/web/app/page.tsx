@@ -22,8 +22,9 @@ export default function DashboardPage() {
 
   const card = {
     background: "var(--card)",
-    borderRadius: 18,
-    boxShadow: "var(--nm-out)",
+    borderRadius: 20,
+    boxShadow: "var(--shadow)",
+    border: "1.5px solid rgba(15,18,64,0.06)",
   } as React.CSSProperties;
 
   return (
@@ -39,9 +40,9 @@ export default function DashboardPage() {
           </h1>
         </div>
         <button onClick={toggleTheme} aria-label="Toggle theme" style={{
-          width: 46, height: 46, borderRadius: 23, flexShrink: 0,
-          background: "var(--card)", boxShadow: "var(--nm-out-sm)",
-          border: "none", cursor: "pointer", fontSize: 16, fontWeight: 700,
+          width: 44, height: 44, borderRadius: 50, flexShrink: 0,
+          background: "var(--card)", boxShadow: "var(--shadow-sm)",
+          border: "1.5px solid rgba(15,18,64,0.10)", cursor: "pointer", fontSize: 16, fontWeight: 700,
           color: "var(--text)",
         }}>
           {dark ? "L" : "D"}
@@ -95,9 +96,9 @@ export default function DashboardPage() {
               width: 42, height: 42, borderRadius: 12, flexShrink: 0,
               display: "flex", alignItems: "center", justifyContent: "center",
               fontSize: 13, fontWeight: 800,
-              background: step.active ? "var(--accent)" : "var(--card)",
+              background: step.active ? "var(--accent)" : "var(--card2)",
               color: step.active ? "#ffffff" : "var(--dim)",
-              boxShadow: step.active ? "var(--nm-out-sm)" : "var(--nm-in)",
+              boxShadow: step.active ? "0 4px 12px rgba(33,37,102,0.28)" : "none",
             }}>
               {step.n}
             </div>
@@ -106,7 +107,7 @@ export default function DashboardPage() {
                 <span style={{ fontSize: 15, fontWeight: 700, color: step.active ? "var(--bright)" : "var(--dim)" }}>
                   {step.name}
                 </span>
-                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "1px", padding: "3px 9px", borderRadius: 7, background: "var(--card)", color: "var(--green)", boxShadow: "var(--nm-out-sm)" }}>{step.phase}</span>
+                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "1px", padding: "3px 10px", borderRadius: 50, background: "rgba(16,185,129,0.10)", color: "var(--green)", border: "1px solid rgba(16,185,129,0.20)" }}>{step.phase}</span>
                 <span style={{ fontSize: 11, color: "var(--dim)" }}>{step.time}</span>
               </div>
               <p style={{ fontSize: 13, color: "var(--dim)", lineHeight: 1.5 }}>{step.desc}</p>
