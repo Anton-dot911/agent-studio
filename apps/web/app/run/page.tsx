@@ -78,14 +78,7 @@ export default function RunPage() {
   const [error, setError] = useState("");
   const [elapsed, setElapsed] = useState(0);
   const [meta, setMeta] = useState<{ costUsd: number; tokens: number } | null>(null);
-  const [shouldPrint, setShouldPrint] = useState(false);
-
-  useEffect(() => {
-    if (shouldPrint && (status === "document")) {
-      setShouldPrint(false);
-      setTimeout(() => window.print(), 400);
-    }
-  }, [shouldPrint, status]);
+  const [wasRevised, setWasRevised] = useState(false);
 
   const set = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }));
   const card = { background: "var(--card)", borderRadius: 20, boxShadow: "var(--shadow)" } as React.CSSProperties;
@@ -143,7 +136,7 @@ export default function RunPage() {
   // ── Step 1: Research ───────────────────────────────────────────────────────
   const runResearch = async () => {
     if (!form.projectName) { setError("Enter a project name to continue"); return; }
-    setStatus("running"); setResearchResult(null); setSpec(null); setQaReport(null); setError(""); setMeta(null);
+    setStatus("running"); setResearchResult(null); setSpec(null); setQaReport(null); setError(""); setMeta(null); setWasRevised(false);
     const timer = startTimer(s => setElapsed(s));
     try {
       const { data, meta } = await fetchSSE("/api/agents/research", { projectId: "p_" + Date.now(), intakeData: form });
@@ -167,6 +160,7 @@ export default function RunPage() {
       timer.stop();
       setSpec(data as unknown as TechSpec);
       setMeta({ costUsd: (meta.costUsd as number) ?? 0, tokens: ((meta.inputTokens as number) ?? 0) + ((meta.outputTokens as number) ?? 0) });
+      setWasRevised(false);
       setStatus("document");
     } catch (e) {
       timer.stop();
@@ -192,22 +186,17 @@ export default function RunPage() {
     }
   };
 
-  // ── Step 3b: Revise via Writer with checklist ──────────────────────────────
+  // ── Step 3b: Revise ────────────────────────────────────────────────────────
   const runRevise = async () => {
     setStatus("revising"); setError("");
     const timer = startTimer(s => setElapsed(s));
     try {
-      const { data, meta } = await fetchSSE("/api/agents/writer", {
-        projectId: "p_" + Date.now(),
-        intakeData: form,
-        researchReport: researchResult,
-        checklistItems: qaReport?.humanChecklist ?? [],
-      });
+      const { data, meta } = await fetchSSE("/api/agents/revise", { techSpec: spec, qaReport, intakeData: form, documentType: form.documentNeeds });
       timer.stop();
       setSpec(data as unknown as TechSpec);
       setQaReport(null);
       setMeta({ costUsd: (meta.costUsd as number) ?? 0, tokens: ((meta.inputTokens as number) ?? 0) + ((meta.outputTokens as number) ?? 0) });
-      setShouldPrint(true);
+      setWasRevised(true);
       setStatus("document");
     } catch (e) {
       timer.stop();
@@ -243,8 +232,9 @@ export default function RunPage() {
 
   // ── Document view (with QA toolbar) ───────────────────────────────────────
   if ((status === "document" || status === "qa_checking" || status === "qa_done" || status === "revising" || status === "delivering" || status === "delivered") && spec) {
-    const showQABar = status === "document" || status === "qa_checking";
+    const showQABar = (status === "document" || status === "qa_checking") && !wasRevised;
     const showQAResult = status === "qa_done" || status === "revising" || status === "delivered" || status === "delivering";
+    const canDownloadPdf = wasRevised || (qaReport !== null && qaReport.score >= 9);
 
     const qaColor = qaReport
       ? qaReport.score >= 8 ? "var(--green)" : qaReport.score >= 6 ? "#f59e0b" : "#ef4444"
@@ -295,7 +285,9 @@ export default function RunPage() {
           {/* Toolbar */}
           <div className="doc-bar">
             <button onClick={() => setStatus("done")} style={{ fontSize: 13, padding: "9px 20px", borderRadius: 50, background: "var(--card)", boxShadow: "var(--shadow-sm)", color: "var(--text)", border: "1.5px solid rgba(15,18,64,0.10)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>← Back</button>
-            <button onClick={() => window.print()} style={{ fontSize: 13, padding: "9px 22px", borderRadius: 50, background: "var(--accent)", color: "#fff", boxShadow: "0 4px 14px rgba(33,37,102,0.28)", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>Save as PDF</button>
+            {canDownloadPdf && (
+              <button onClick={() => window.print()} style={{ fontSize: 13, padding: "9px 22px", borderRadius: 50, background: "var(--accent)", color: "#fff", boxShadow: "0 4px 14px rgba(33,37,102,0.28)", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>Download PDF</button>
+            )}
 
             {showQABar && (
               <button
@@ -348,28 +340,36 @@ export default function RunPage() {
                 </div>
               )}
 
-              {qaReport.humanChecklist.length > 0 && (
-                <div style={{ background: "var(--bg)", borderRadius: 10, padding: "12px 14px", marginBottom: 14 }}>
-                  <p style={{ fontSize: 10, letterSpacing: "2px", textTransform: "uppercase", color: "var(--accent)", fontWeight: 700, marginBottom: 8 }}>Checklist</p>
-                  {qaReport.humanChecklist.map((item, i) => (
-                    <label key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6, cursor: "pointer" }}>
-                      <input type="checkbox" style={{ marginTop: 2, flexShrink: 0 }} />
-                      <span style={{ fontSize: 12.5, color: "var(--text)", lineHeight: 1.5 }}>{item}</span>
-                    </label>
-                  ))}
-                </div>
+              {/* score >= 9: ready, show Download PDF */}
+              {qaReport.score >= 9 && (
+                <button onClick={() => window.print()} style={{ width: "100%", padding: "14px 18px", borderRadius: 50, background: "var(--green)", color: "#fff", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 14, boxShadow: "0 4px 16px rgba(16,185,129,0.30)", marginBottom: 14 }}>
+                  Download PDF
+                </button>
               )}
 
-              {/* Revise button */}
-              {status === "qa_done" && qaReport && (qaReport.criticalIssues.length > 0 || qaReport.majorIssues.length > 0 || qaReport.minorIssues.length > 0) && (
-                <div style={{ marginBottom: 14 }}>
-                  <button
-                    onClick={runRevise}
-                    style={{ width: "100%", padding: "14px 18px", borderRadius: 50, background: "var(--accent)", color: "#fff", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 14, boxShadow: "0 4px 16px rgba(33,37,102,0.28)" }}>
-                    Застосувати ревізію
-                  </button>
-                  <p style={{ fontSize: 11, color: "var(--dim)", marginTop: 6, textAlign: "center" }}>Writer перепише документ з урахуванням усіх пунктів Checklist</p>
-                </div>
+              {/* score < 9: show Checklist + Revise button */}
+              {qaReport.score < 9 && (
+                <>
+                  {qaReport.humanChecklist.length > 0 && (
+                    <div style={{ background: "var(--bg)", borderRadius: 10, padding: "12px 14px", marginBottom: 14 }}>
+                      <p style={{ fontSize: 10, letterSpacing: "2px", textTransform: "uppercase", color: "var(--accent)", fontWeight: 700, marginBottom: 8 }}>Checklist</p>
+                      {qaReport.humanChecklist.map((item, i) => (
+                        <label key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6, cursor: "pointer" }}>
+                          <input type="checkbox" style={{ marginTop: 2, flexShrink: 0 }} />
+                          <span style={{ fontSize: 12.5, color: "var(--text)", lineHeight: 1.5 }}>{item}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  {status === "qa_done" && (
+                    <div style={{ marginBottom: 14 }}>
+                      <button onClick={runRevise} style={{ width: "100%", padding: "14px 18px", borderRadius: 50, background: "var(--accent)", color: "#fff", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 14, boxShadow: "0 4px 16px rgba(33,37,102,0.28)" }}>
+                        Застосувати ревізію
+                      </button>
+                      <p style={{ fontSize: 11, color: "var(--dim)", marginTop: 6, textAlign: "center" }}>Reviser виправить документ за пунктами Checklist</p>
+                    </div>
+                  )}
+                </>
               )}
 
               {status === "revising" && (
@@ -421,6 +421,22 @@ export default function RunPage() {
                   </p>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Post-revision success card */}
+          {wasRevised && status === "document" && (
+            <div style={{ ...card, padding: "20px 22px", marginBottom: 18, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", border: "1.5px solid rgba(16,185,129,0.20)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ width: 40, height: 40, borderRadius: 12, background: "rgba(16,185,129,0.12)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>✓</div>
+                <div>
+                  <p style={{ fontSize: 14, fontWeight: 700, color: "var(--bright)", marginBottom: 2 }}>Документ виправлено</p>
+                  <p style={{ fontSize: 12, color: "var(--dim)" }}>Всі пункти Checklist враховані. Готово до завантаження.</p>
+                </div>
+              </div>
+              <button onClick={() => window.print()} style={{ padding: "12px 28px", borderRadius: 50, background: "var(--accent)", color: "#fff", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 14, boxShadow: "0 4px 16px rgba(33,37,102,0.28)", whiteSpace: "nowrap" }}>
+                Download PDF
+              </button>
             </div>
           )}
 
