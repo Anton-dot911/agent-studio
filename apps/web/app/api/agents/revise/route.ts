@@ -32,6 +32,7 @@ Rules:
 - Fix every critical issue — these are blocking
 - Fix every major issue — these reduce quality
 - Address minor issues where practical
+- Address EVERY item in the Checklist — these are mandatory requirements the document must satisfy
 - Same conciseness constraints as the original (2-3 blocks per section)
 - Output must be complete and valid JSON`;
 
@@ -90,7 +91,7 @@ ${qaReport.summary}
 ISSUES TO FIX:
 ${issuesList || "No issues — minor polish only"}
 
-HUMAN CHECKLIST (address where possible in the document):
+CHECKLIST (every item below MUST be addressed in the revised document):
 ${qaReport.humanChecklist.join("\n")}
 
 ${intakeData ? `PROJECT CONTEXT:\nBlockchain: ${intakeData.blockchain}\nBudget: ${intakeData.budget}\nTimeline: ${intakeData.timeline}\n` : ""}
