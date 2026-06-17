@@ -63,6 +63,7 @@ const DOC_TYPES = [
 
 const fieldStyle: React.CSSProperties = {
   width: "100%", borderRadius: 12, padding: "13px 15px", fontSize: 14, fontFamily: "inherit",
+  background: "var(--card)", border: "1.5px solid rgba(15,18,64,0.10)", color: "var(--bright)",
 };
 
 export default function RunPage() {
@@ -79,7 +80,7 @@ export default function RunPage() {
   const [meta, setMeta] = useState<{ costUsd: number; tokens: number } | null>(null);
 
   const set = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }));
-  const card = { background: "var(--card)", borderRadius: 16, boxShadow: "var(--nm-out)" } as React.CSSProperties;
+  const card = { background: "var(--card)", borderRadius: 20, boxShadow: "var(--shadow)" } as React.CSSProperties;
 
   const startTimer = (cb: (elapsed: number) => void) => {
     const start = Date.now();
@@ -279,26 +280,26 @@ export default function RunPage() {
         <div className="doc-wrap">
           {/* Toolbar */}
           <div className="doc-bar">
-            <button onClick={() => setStatus("done")} style={{ fontSize: 12, padding: "9px 16px", borderRadius: 10, background: "var(--card)", boxShadow: "var(--nm-out-sm)", color: "var(--text)", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>Back</button>
-            <button onClick={() => window.print()} style={{ fontSize: 12, padding: "9px 18px", borderRadius: 10, background: "var(--accent)", color: "#fff", boxShadow: "var(--nm-out-sm)", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, letterSpacing: "1px", textTransform: "uppercase" }}>Save as PDF</button>
+            <button onClick={() => setStatus("done")} style={{ fontSize: 13, padding: "9px 20px", borderRadius: 50, background: "var(--card)", boxShadow: "var(--shadow-sm)", color: "var(--text)", border: "1.5px solid rgba(15,18,64,0.10)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>← Back</button>
+            <button onClick={() => window.print()} style={{ fontSize: 13, padding: "9px 22px", borderRadius: 50, background: "var(--accent)", color: "#fff", boxShadow: "0 4px 14px rgba(33,37,102,0.28)", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>Save as PDF</button>
 
             {showQABar && (
               <button
                 onClick={runQA}
                 disabled={status === "qa_checking"}
-                style={{ fontSize: 12, padding: "9px 18px", borderRadius: 10, background: status === "qa_checking" ? "var(--card)" : "#0f766e", color: status === "qa_checking" ? "var(--dim)" : "#fff", boxShadow: "var(--nm-out-sm)", border: "none", cursor: status === "qa_checking" ? "default" : "pointer", fontFamily: "inherit", fontWeight: 700, letterSpacing: "1px", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 8 }}>
+                style={{ fontSize: 13, padding: "9px 22px", borderRadius: 50, background: status === "qa_checking" ? "var(--card)" : "#0f766e", color: status === "qa_checking" ? "var(--dim)" : "#fff", boxShadow: status === "qa_checking" ? "var(--shadow-sm)" : "0 4px 14px rgba(15,118,110,0.30)", border: status === "qa_checking" ? "1.5px solid rgba(15,18,64,0.10)" : "none", cursor: status === "qa_checking" ? "default" : "pointer", fontFamily: "inherit", fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
                 {status === "qa_checking" && <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", border: "2px solid var(--dim)", borderTopColor: "transparent", animation: "spin 0.8s linear infinite" }} />}
                 {status === "qa_checking" ? `QA ${elapsed}s` : "Run QA Check"}
               </button>
             )}
 
             {showQAResult && qaReport && (
-              <span style={{ fontSize: 12, padding: "9px 14px", borderRadius: 10, background: "var(--card)", boxShadow: "var(--nm-out-sm)", color: qaColor, fontWeight: 700 }}>
+              <span style={{ fontSize: 13, padding: "9px 18px", borderRadius: 50, background: "var(--card)", boxShadow: "var(--shadow-sm)", border: "1.5px solid rgba(15,18,64,0.08)", color: qaColor, fontWeight: 700 }}>
                 QA {qaReport.score}/10 — {qaReport.status.replace(/_/g, " ")}
               </span>
             )}
 
-            {meta && <span style={{ fontSize: 11, padding: "9px 12px", borderRadius: 10, background: "var(--card)", boxShadow: "var(--nm-out-sm)", color: "var(--dim)", marginLeft: "auto" }}>{meta.tokens.toLocaleString()} tok / ${meta.costUsd.toFixed(4)}</span>}
+            {meta && <span style={{ fontSize: 12, padding: "8px 16px", borderRadius: 50, background: "var(--card)", boxShadow: "var(--shadow-sm)", border: "1.5px solid rgba(15,18,64,0.08)", color: "var(--dim)", marginLeft: "auto" }}>{meta.tokens.toLocaleString()} tok / ${meta.costUsd.toFixed(4)}</span>}
           </div>
 
           {/* QA Panel */}
@@ -350,7 +351,7 @@ export default function RunPage() {
                 <div style={{ marginBottom: 14 }}>
                   <button
                     onClick={runRevise}
-                    style={{ width: "100%", padding: "12px 18px", borderRadius: 10, background: "var(--accent)", color: "#fff", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 12, letterSpacing: "1px", textTransform: "uppercase" }}>
+                    style={{ width: "100%", padding: "14px 18px", borderRadius: 50, background: "var(--accent)", color: "#fff", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 14, boxShadow: "0 4px 16px rgba(33,37,102,0.28)" }}>
                     Apply AI Revisions
                   </button>
                   <p style={{ fontSize: 11, color: "var(--dim)", marginTop: 6, textAlign: "center" }}>AI will fix the issues above and regenerate the document</p>
@@ -388,7 +389,7 @@ export default function RunPage() {
                     <button
                       onClick={runDeliver}
                       disabled={status === "delivering"}
-                      style={{ padding: "11px 20px", borderRadius: 10, background: "#0055b3", color: "#fff", border: "none", cursor: status === "delivering" ? "default" : "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 12, letterSpacing: "1px", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 8 }}>
+                      style={{ padding: "11px 24px", borderRadius: 50, background: "var(--accent)", color: "#fff", border: "none", cursor: status === "delivering" ? "default" : "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 8, boxShadow: "0 4px 14px rgba(33,37,102,0.28)", whiteSpace: "nowrap" }}>
                       {status === "delivering" ? <><span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.4)", borderTopColor: "#fff", animation: "spin 0.8s linear infinite" }} />{elapsed}s</> : "Deliver"}
                     </button>
                   </div>
@@ -472,7 +473,7 @@ export default function RunPage() {
                           key={dt.value}
                           type="button"
                           onClick={() => set("documentNeeds", dt.value)}
-                          style={{ flex: 1, minWidth: 120, padding: "13px 12px", borderRadius: 12, border: form.documentNeeds === dt.value ? "2px solid var(--accent)" : "2px solid transparent", background: form.documentNeeds === dt.value ? "rgba(var(--accent-rgb, 79, 70, 229), 0.08)" : "var(--card)", boxShadow: "var(--nm-out-sm)", cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}>
+                          style={{ flex: 1, minWidth: 120, padding: "14px 14px", borderRadius: 16, border: form.documentNeeds === dt.value ? "2px solid var(--accent)" : "1.5px solid rgba(15,18,64,0.10)", background: form.documentNeeds === dt.value ? "rgba(33,37,102,0.05)" : "var(--card)", boxShadow: "var(--shadow-sm)", cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}>
                           <p style={{ fontSize: 12, fontWeight: 700, color: form.documentNeeds === dt.value ? "var(--accent)" : "var(--bright)", marginBottom: 3 }}>{dt.label}</p>
                           <p style={{ fontSize: 11, color: "var(--dim)", lineHeight: 1.4 }}>{dt.desc}</p>
                         </button>
@@ -492,7 +493,7 @@ export default function RunPage() {
             })}
           </div>
           {error && <div style={{ ...card, padding: "14px 16px", marginBottom: 16, color: "#c83838", fontSize: 13 }}>{error}</div>}
-          <button onClick={runResearch} style={{ width: "100%", padding: "16px", borderRadius: 13, background: "var(--accent)", color: "#fff", fontSize: 12, letterSpacing: "2px", textTransform: "uppercase", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", border: "none", boxShadow: "var(--nm-out-sm)" }}>Run Research Agent</button>
+          <button onClick={runResearch} style={{ width: "100%", padding: "18px", borderRadius: 50, background: "var(--accent)", color: "#fff", fontSize: 15, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", border: "none", boxShadow: "0 4px 16px rgba(33,37,102,0.30)", letterSpacing: "0.3px" }}>Run Research Agent</button>
         </div>
       )}
 
@@ -524,10 +525,10 @@ export default function RunPage() {
               <div style={{ width: 9, height: 9, borderRadius: "50%", background: "var(--green)" }} />
               <span style={{ fontSize: 13, color: "var(--green)", fontWeight: 600 }}>Research done in {elapsed}s</span>
             </div>
-            <button onClick={() => { setStatus("idle"); setResearchResult(null); setSpec(null); }} style={{ fontSize: 11, padding: "6px 14px", borderRadius: 9, background: "var(--card)", boxShadow: "var(--nm-out-sm)", color: "var(--text)", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>New</button>
+            <button onClick={() => { setStatus("idle"); setResearchResult(null); setSpec(null); }} style={{ fontSize: 12, padding: "7px 18px", borderRadius: 50, background: "var(--card)", boxShadow: "var(--shadow-sm)", color: "var(--text)", border: "1.5px solid rgba(15,18,64,0.10)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>New</button>
           </div>
 
-          <button onClick={runWriter} style={{ ...card, width: "100%", padding: "18px", marginBottom: 18, cursor: "pointer", border: "none", textAlign: "left", display: "block" }}>
+          <button onClick={runWriter} style={{ ...card, width: "100%", padding: "20px 22px", marginBottom: 18, cursor: "pointer", border: "1.5px solid rgba(15,18,64,0.06)", textAlign: "left", display: "block" }}>
             <p style={{ fontSize: 10, letterSpacing: "3px", textTransform: "uppercase", color: "var(--accent)", marginBottom: 8, fontWeight: 700 }}>Step 2</p>
             <p style={{ fontSize: 17, fontWeight: 700, color: "var(--bright)", marginBottom: 4 }}>Generate full Tech Spec</p>
             <p style={{ fontSize: 12.5, color: "var(--dim)", lineHeight: 1.5 }}>Writer Agent turns this research into a client-ready document → QA check → deliver by email.</p>

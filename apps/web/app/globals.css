@@ -1,41 +1,40 @@
 @import "tailwindcss";
 
-/* ===== Light (neumorphic) - default ===== */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+/* ===== Light (clean card) - default ===== */
 :root {
-  --bg:        #d6d8e0;
-  --card:      #e4e4e6;
-  --card2:     #dcdce0;
-  --text:      #28304f;
-  --bright:    #0c1430;
-  --dim:       #525d80;
-  --cyan:      #1580b8;
-  --green:     #128055;
-  --purple:    #5246b8;
-  --accent:    #1580b8;
-  --sh-light:  #ffffff;
-  --sh-dark:   #b0b2bd;
-  --nm-out:    4px 4px 8px var(--sh-dark), -4px -4px 8px var(--sh-light);
-  --nm-out-sm: 3px 3px 6px var(--sh-dark), -3px -3px 6px var(--sh-light);
-  --nm-in:     inset 3px 3px 6px var(--sh-dark), inset -3px -3px 6px var(--sh-light);
+  --bg:        #ECEAE4;
+  --card:      #FFFFFF;
+  --card2:     #F5F3EE;
+  --text:      #3D3F5C;
+  --bright:    #0F1240;
+  --dim:       #8B8FA8;
+  --green:     #10B981;
+  --accent:    #212566;
+  --shadow:    0 4px 20px rgba(15,18,64,0.10), 0 1px 4px rgba(15,18,64,0.06);
+  --shadow-sm: 0 2px 10px rgba(15,18,64,0.08), 0 1px 2px rgba(15,18,64,0.04);
+  /* keep neumorphic aliases so no existing code breaks */
+  --nm-out:    var(--shadow);
+  --nm-out-sm: var(--shadow-sm);
+  --nm-in:     inset 0 1px 3px rgba(15,18,64,0.10);
 }
 
-/* ===== Dark (neumorphic) ===== */
+/* ===== Dark ===== */
 [data-theme="dark"] {
-  --bg:        #1c2030;
-  --card:      #232838;
-  --card2:     #20263a;
-  --text:      #b4c0e0;
-  --bright:    #eef3ff;
-  --dim:       #6b779c;
-  --cyan:      #3fc6ff;
-  --green:     #34d399;
-  --purple:    #9a8bff;
-  --accent:    #3fc6ff;
-  --sh-light:  #2c3346;
-  --sh-dark:   #10131c;
-  --nm-out:    4px 4px 8px var(--sh-dark), -4px -4px 8px var(--sh-light);
-  --nm-out-sm: 3px 3px 6px var(--sh-dark), -3px -3px 6px var(--sh-light);
-  --nm-in:     inset 3px 3px 6px var(--sh-dark), inset -3px -3px 6px var(--sh-light);
+  --bg:        #131625;
+  --card:      #1C2038;
+  --card2:     #181C32;
+  --text:      #B4BEDD;
+  --bright:    #EEF2FF;
+  --dim:       #5E6A94;
+  --green:     #34D399;
+  --accent:    #5B6BFF;
+  --shadow:    0 4px 20px rgba(0,0,0,0.35), 0 1px 4px rgba(0,0,0,0.20);
+  --shadow-sm: 0 2px 10px rgba(0,0,0,0.28);
+  --nm-out:    var(--shadow);
+  --nm-out-sm: var(--shadow-sm);
+  --nm-in:     inset 0 1px 3px rgba(0,0,0,0.40);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -45,18 +44,22 @@
 ::-webkit-scrollbar-thumb { background: var(--dim); border-radius: 2px; }
 
 body {
-  font-family: 'IBM Plex Mono', 'Courier New', monospace;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
   background: var(--bg);
   color: var(--text);
   transition: background 0.3s, color 0.3s;
 }
 
-input, textarea {
+input, textarea, select {
   color: var(--bright);
-  background: var(--bg);
-  box-shadow: var(--nm-in);
-  border: none;
-  transition: box-shadow 0.2s;
+  background: var(--card);
+  border: 1.5px solid rgba(15,18,64,0.10);
+  border-radius: 12px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(33,37,102,0.10);
 }
 input::placeholder, textarea::placeholder { color: var(--dim); opacity: 1; }
-input:focus, textarea:focus { outline: none; box-shadow: var(--nm-in), 0 0 0 1px var(--accent); }
