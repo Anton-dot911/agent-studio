@@ -104,7 +104,11 @@ interface AnthropicStreamEvent {
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { intakeData, researchReport } = body as { intakeData: Record<string, string>; researchReport: unknown };
+  const { intakeData, researchReport, checklistItems } = body as {
+    intakeData: Record<string, string>;
+    researchReport: unknown;
+    checklistItems?: string[];
+  };
 
   if (!intakeData?.projectName || !researchReport) {
     return new Response(JSON.stringify({ error: "intakeData.projectName and researchReport are required" }), { status: 400 });
@@ -141,7 +145,10 @@ Document Type: ${intakeData.documentNeeds}
 
 RESEARCH REPORT (JSON):
 ${JSON.stringify(researchReport, null, 2)}
-
+${checklistItems && checklistItems.length > 0 ? `
+REVISION CHECKLIST (every item below MUST be addressed in the document):
+${checklistItems.map((item, i) => `${i + 1}. ${item}`).join("\n")}
+` : ""}
 Write the full document now as the JSON object.`;
 
         const apiRes = await fetch("https://api.anthropic.com/v1/messages", {

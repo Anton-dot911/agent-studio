@@ -192,12 +192,17 @@ export default function RunPage() {
     }
   };
 
-  // ── Step 3b: Revise ────────────────────────────────────────────────────────
+  // ── Step 3b: Revise via Writer with checklist ──────────────────────────────
   const runRevise = async () => {
     setStatus("revising"); setError("");
     const timer = startTimer(s => setElapsed(s));
     try {
-      const { data, meta } = await fetchSSE("/api/agents/revise", { techSpec: spec, qaReport, intakeData: form, documentType: form.documentNeeds });
+      const { data, meta } = await fetchSSE("/api/agents/writer", {
+        projectId: "p_" + Date.now(),
+        intakeData: form,
+        researchReport: researchResult,
+        checklistItems: qaReport?.humanChecklist ?? [],
+      });
       timer.stop();
       setSpec(data as unknown as TechSpec);
       setQaReport(null);
@@ -361,9 +366,9 @@ export default function RunPage() {
                   <button
                     onClick={runRevise}
                     style={{ width: "100%", padding: "14px 18px", borderRadius: 50, background: "var(--accent)", color: "#fff", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 14, boxShadow: "0 4px 16px rgba(33,37,102,0.28)" }}>
-                    Apply Checklist & Save PDF
+                    Застосувати ревізію
                   </button>
-                  <p style={{ fontSize: 11, color: "var(--dim)", marginTop: 6, textAlign: "center" }}>Writer rewrites the document based on the Checklist, then opens Save as PDF</p>
+                  <p style={{ fontSize: 11, color: "var(--dim)", marginTop: 6, textAlign: "center" }}>Writer перепише документ з урахуванням усіх пунктів Checklist</p>
                 </div>
               )}
 
@@ -371,7 +376,7 @@ export default function RunPage() {
                 <div style={{ marginBottom: 14, textAlign: "center", padding: "12px 0" }}>
                   <div style={{ display: "inline-flex", alignItems: "center", gap: 10, color: "var(--accent)" }}>
                     <div style={{ width: 16, height: 16, borderRadius: "50%", border: "2px solid var(--accent)", borderTopColor: "transparent", animation: "spin 0.8s linear infinite" }} />
-                    <span style={{ fontSize: 12, letterSpacing: "2px", textTransform: "uppercase", fontWeight: 700 }}>Revising {elapsed}s</span>
+                    <span style={{ fontSize: 12, letterSpacing: "2px", textTransform: "uppercase", fontWeight: 700 }}>Пише новий документ... {elapsed}s</span>
                   </div>
                 </div>
               )}
