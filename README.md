@@ -1,19 +1,29 @@
-# Agent Studio — Phase 1
+# Agent Studio
 
-AI-агенти для генерації Web3 технічних документів.
-Tech Spec · Tokenomics · DeFi Audit
+AI-агенти для генерації Web3 документів: Tech Spec · Tokenomics · DeFi Audit Prep.
+
+Повний pipeline: Research → Writer → QA → Revise → Deliver.
+
+## Архітектура
+
+6 агентів, кожен — Edge Function з SSE-стрімінгом (немає таймаутів Netlify):
+
+| Агент | Модель | Призначення |
+|-------|--------|-------------|
+| Research | Haiku | Аналіз ринку, стеку, конкурентів |
+| Writer | Haiku | Генерація 10-секційного документу |
+| QA | Sonnet | Перевірка якості, score 1-10 |
+| Revise | Haiku | Виправлення за звітом QA |
+| Deliver | Haiku | PDF + email через Resend |
+| Orchestrate | Haiku/Sonnet | Повний pipeline одним запитом |
 
 ## Швидкий старт
 
-### 1. Завантаж на GitHub
+### 1. Завантаж репо
 
 ```bash
-# Розпакуй ZIP, відкрий папку agent-studio в терміналі
-git init
-git add .
-git commit -m "feat: Agent Studio Phase 1"
-git remote add origin https://github.com/YOUR_USERNAME/agent-studio.git
-git push -u origin main
+git clone https://github.com/YOUR_USERNAME/agent-studio.git
+cd agent-studio
 ```
 
 ### 2. Деплой на Netlify
@@ -30,7 +40,6 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY = eyJ...
 SUPABASE_SERVICE_ROLE_KEY   = eyJ...
 RESEND_API_KEY              = re_...
 NEXT_PUBLIC_APP_URL         = https://YOUR-SITE.netlify.app
-TAVILY_API_KEY              = tvly-... (опціонально)
 ```
 
 5. **Deploy site**
@@ -45,15 +54,16 @@ Supabase Dashboard → SQL Editor
 
 ### 4. Перевірка
 
-Відкрий `https://YOUR-SITE.netlify.app/run` → заповни форму → запусти Research Agent
+Відкрий `https://YOUR-SITE.netlify.app/run` → заповни форму → запусти агентів.
 
 ## Локальний запуск
 
 ```bash
-pnpm install
-cp .env.example apps/web/.env.local
-# заповни apps/web/.env.local
-pnpm dev
+cd apps/web
+npm install
+cp .env.example .env.local
+# заповни .env.local
+npm run dev
 # → http://localhost:3000
 ```
 
@@ -61,16 +71,25 @@ pnpm dev
 
 ```
 agent-studio/
-├── apps/web/              # Next.js 15 додаток
-├── packages/agents/       # Research Agent + TypeScript типи
-├── packages/tools/        # Веб-пошук (Tavily)
-└── supabase/migrations/   # SQL схема
+├── apps/web/                  # Next.js 15 додаток
+│   └── app/api/agents/
+│       ├── research/          # Research Agent
+│       ├── writer/            # Writer Agent
+│       ├── qa/                # QA Agent
+│       ├── revise/            # Reviser Agent
+│       ├── deliver/           # Delivery Agent
+│       └── orchestrate/       # Pipeline Orchestrator
+└── supabase/migrations/       # SQL схема
 ```
 
-## Phase 2 (в розробці)
+## Pipeline
 
-- [ ] Writer Agent — генерація 14-сторінкового документу
-- [ ] QA Agent — перевірка якості
-- [ ] Delivery Agent — PDF + email через Resend
-- [ ] Orchestrator — повний pipeline одним кліком
-- [ ] Semantic memory — pgvector
+```
+Форма → Research (Haiku) → Writer (Haiku) → QA (Sonnet)
+                                                  ↓
+                                    score < 9 → Revise (Haiku)
+                                                  ↓
+                                           Deliver (PDF + email)
+```
+
+Кожен крок стрімить прогрес через SSE — з'єднання не обривається на довгих запитах.
