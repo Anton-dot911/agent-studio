@@ -15,7 +15,7 @@ OUTPUT STRUCTURE:
   "criticalIssues": ["issue that makes document unusable or factually wrong"],
   "majorIssues": ["issue that significantly reduces document value"],
   "minorIssues": ["small improvement opportunity"],
-  "humanChecklist": ["action item for human reviewer before delivery"],
+  "humanChecklist": ["specific action item the writer must address in the revised document"],
   "summary": "2-3 sentence overall assessment of document quality"
 }
 
@@ -29,7 +29,7 @@ RULES:
 - criticalIssues: genuinely blocking problems only. Empty [] if none.
 - majorIssues: max 5 items.
 - minorIssues: max 5 items.
-- humanChecklist: 3-5 items a human should verify before sending to client.
+- humanChecklist: 3-5 concrete items the writer must fix or add before the document is client-ready.
 - Be honest and specific. This is a paid deliverable.`;
 
 const TECH_SPEC_QA = `You are a senior technical documentation reviewer specializing in Web3 and blockchain projects. You review Technical Specification documents for quality, accuracy, completeness, and client-readiness.

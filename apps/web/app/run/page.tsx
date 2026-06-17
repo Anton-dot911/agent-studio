@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 
 type RunStatus =
@@ -78,6 +78,14 @@ export default function RunPage() {
   const [error, setError] = useState("");
   const [elapsed, setElapsed] = useState(0);
   const [meta, setMeta] = useState<{ costUsd: number; tokens: number } | null>(null);
+  const [shouldPrint, setShouldPrint] = useState(false);
+
+  useEffect(() => {
+    if (shouldPrint && (status === "document")) {
+      setShouldPrint(false);
+      setTimeout(() => window.print(), 400);
+    }
+  }, [shouldPrint, status]);
 
   const set = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }));
   const card = { background: "var(--card)", borderRadius: 20, boxShadow: "var(--shadow)" } as React.CSSProperties;
@@ -194,6 +202,7 @@ export default function RunPage() {
       setSpec(data as unknown as TechSpec);
       setQaReport(null);
       setMeta({ costUsd: (meta.costUsd as number) ?? 0, tokens: ((meta.inputTokens as number) ?? 0) + ((meta.outputTokens as number) ?? 0) });
+      setShouldPrint(true);
       setStatus("document");
     } catch (e) {
       timer.stop();
@@ -336,7 +345,7 @@ export default function RunPage() {
 
               {qaReport.humanChecklist.length > 0 && (
                 <div style={{ background: "var(--bg)", borderRadius: 10, padding: "12px 14px", marginBottom: 14 }}>
-                  <p style={{ fontSize: 10, letterSpacing: "2px", textTransform: "uppercase", color: "var(--accent)", fontWeight: 700, marginBottom: 8 }}>Human Checklist</p>
+                  <p style={{ fontSize: 10, letterSpacing: "2px", textTransform: "uppercase", color: "var(--accent)", fontWeight: 700, marginBottom: 8 }}>Checklist</p>
                   {qaReport.humanChecklist.map((item, i) => (
                     <label key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6, cursor: "pointer" }}>
                       <input type="checkbox" style={{ marginTop: 2, flexShrink: 0 }} />
@@ -352,9 +361,9 @@ export default function RunPage() {
                   <button
                     onClick={runRevise}
                     style={{ width: "100%", padding: "14px 18px", borderRadius: 50, background: "var(--accent)", color: "#fff", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 14, boxShadow: "0 4px 16px rgba(33,37,102,0.28)" }}>
-                    Apply AI Revisions
+                    Apply Checklist & Save PDF
                   </button>
-                  <p style={{ fontSize: 11, color: "var(--dim)", marginTop: 6, textAlign: "center" }}>AI will fix the issues above and regenerate the document</p>
+                  <p style={{ fontSize: 11, color: "var(--dim)", marginTop: 6, textAlign: "center" }}>Writer rewrites the document based on the Checklist, then opens Save as PDF</p>
                 </div>
               )}
 
