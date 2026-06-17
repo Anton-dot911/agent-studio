@@ -44,7 +44,7 @@ interface AnthropicStreamEvent {
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { techSpec, qaReport, intakeData } = body as {
+  const { techSpec, qaReport, intakeData, documentType } = body as {
     techSpec: { title: string };
     qaReport: {
       criticalIssues: string[];
@@ -54,6 +54,7 @@ export async function POST(req: NextRequest) {
       summary: string;
     };
     intakeData?: Record<string, string>;
+    documentType?: string;
   };
 
   if (!techSpec?.title || !qaReport) {
@@ -81,7 +82,9 @@ export async function POST(req: NextRequest) {
           ...qaReport.minorIssues.map(i => `[MINOR] ${i}`),
         ].join("\n");
 
-        const userMessage = `QA REPORT SUMMARY:
+        const userMessage = `DOCUMENT TYPE: ${documentType ?? intakeData?.documentNeeds ?? "Tech Spec"}
+
+QA REPORT SUMMARY:
 ${qaReport.summary}
 
 ISSUES TO FIX:

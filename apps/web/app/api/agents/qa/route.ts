@@ -5,8 +5,7 @@ export const maxDuration = 60;
 
 const MODEL = "claude-sonnet-4-6";
 
-const SYSTEM_PROMPT = `You are a senior technical documentation reviewer specializing in Web3 and blockchain projects. You review Technical Specification documents for quality, accuracy, completeness, and client-readiness.
-
+const OUTPUT_STRUCTURE = `
 Respond with ONLY a valid JSON object. No markdown, no code fences. Start with { and end with }.
 
 OUTPUT STRUCTURE:
@@ -26,6 +25,16 @@ SCORING GUIDE:
 - 5-6: Major revisions needed.
 - 1-4: Critical problems.
 
+RULES:
+- criticalIssues: genuinely blocking problems only. Empty [] if none.
+- majorIssues: max 5 items.
+- minorIssues: max 5 items.
+- humanChecklist: 3-5 items a human should verify before sending to client.
+- Be honest and specific. This is a paid deliverable.`;
+
+const TECH_SPEC_QA = `You are a senior technical documentation reviewer specializing in Web3 and blockchain projects. You review Technical Specification documents for quality, accuracy, completeness, and client-readiness.
+${OUTPUT_STRUCTURE}
+
 WHAT TO CHECK:
 1. All 10 sections present and substantive
 2. Technical accuracy — library names, protocols, patterns correct?
@@ -34,14 +43,44 @@ WHAT TO CHECK:
 5. Security section — real attack vectors mentioned?
 6. Cost Estimation — numbers realistic for the scope?
 7. No hallucinated tech stacks or non-existent protocols
-8. Smart Contract section — appropriate for the blockchain?
+8. Smart Contract section — appropriate for the blockchain?`;
 
-RULES:
-- criticalIssues: genuinely blocking problems only. Empty [] if none.
-- majorIssues: max 5 items.
-- minorIssues: max 5 items.
-- humanChecklist: 3-5 items a human should verify before sending to client.
-- Be honest and specific. This is a paid deliverable.`;
+const TOKENOMICS_QA = `You are a senior tokenomics reviewer and crypto economist. You review Tokenomics documents for economic soundness, accuracy, completeness, and client-readiness.
+${OUTPUT_STRUCTURE}
+
+WHAT TO CHECK:
+1. All 10 sections present and substantive
+2. Token distribution — percentages add up to 100%? Allocations realistic?
+3. Vesting schedules — industry-standard? Prevent dump risk?
+4. Economic model — supply/demand drivers credible?
+5. Utility — genuine use cases or fabricated demand?
+6. Governance — voting mechanism described clearly?
+7. Market comparables — accurate data on cited projects?
+8. Risk analysis — regulatory, liquidity, and concentration risks addressed?
+9. Launch roadmap — timeline feasible for the team size and budget?
+10. No invented tokenomics mechanisms or non-existent DeFi primitives`;
+
+const DEFI_AUDIT_QA = `You are a senior smart contract security auditor. You review DeFi Audit Preparation documents for technical accuracy, completeness of threat modelling, and audit-readiness.
+${OUTPUT_STRUCTURE}
+
+WHAT TO CHECK:
+1. All 10 sections present and substantive
+2. Attack surface — reentrancy, flash loans, oracle manipulation, access control issues listed?
+3. Architecture — contract relationships and trust assumptions correctly described?
+4. Access controls — admin keys, multisig, timelocks mentioned where relevant?
+5. Economic attack vectors — price manipulation, MEV, sandwich attacks considered?
+6. Testing strategy — unit tests, fuzz testing, formal verification referenced?
+7. Known vulnerabilities — SWC registry or common DeFi exploits referenced accurately?
+8. Remediation roadmap — concrete fixes, not vague suggestions?
+9. Audit cost & timeline — realistic for the codebase size?
+10. No fabricated security tools or non-existent audit firms`;
+
+function getQAPrompt(documentType: string): string {
+  const t = documentType.toLowerCase();
+  if (t.includes("tokenomics") || t.includes("token")) return TOKENOMICS_QA;
+  if (t.includes("audit") || t.includes("defi") || t.includes("security")) return DEFI_AUDIT_QA;
+  return TECH_SPEC_QA;
+}
 
 interface AnthropicStreamEvent {
   type: string;
@@ -52,7 +91,11 @@ interface AnthropicStreamEvent {
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { techSpec, researchReport } = body as { techSpec: { title: string }; researchReport: unknown };
+  const { techSpec, researchReport, documentType } = body as {
+    techSpec: { title: string };
+    researchReport: unknown;
+    documentType?: string;
+  };
 
   if (!techSpec?.title || !researchReport) {
     return new Response(JSON.stringify({ error: "techSpec and researchReport are required" }), { status: 400 });
@@ -64,6 +107,7 @@ export async function POST(req: NextRequest) {
   }
 
   const encoder = new TextEncoder();
+  const systemPrompt = getQAPrompt(documentType ?? "tech spec");
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -73,7 +117,7 @@ export async function POST(req: NextRequest) {
       try {
         const startTime = Date.now();
 
-        const userMessage = `TECH SPEC TO REVIEW:
+        const userMessage = `DOCUMENT TO REVIEW:
 ${JSON.stringify(techSpec, null, 2)}
 
 ORIGINAL RESEARCH REPORT (for fact-checking):
@@ -91,7 +135,7 @@ Review this document and return your QA report as JSON.`;
           body: JSON.stringify({
             model: MODEL,
             max_tokens: 1500,
-            system: SYSTEM_PROMPT,
+            system: systemPrompt,
             messages: [{ role: "user", content: userMessage }],
             stream: true,
           }),
