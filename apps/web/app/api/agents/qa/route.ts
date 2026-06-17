@@ -134,7 +134,7 @@ Review this document and return your QA report as JSON.`;
           },
           body: JSON.stringify({
             model: MODEL,
-            max_tokens: 1500,
+            max_tokens: 3000,
             system: systemPrompt,
             messages: [{ role: "user", content: userMessage }],
             stream: true,

@@ -308,6 +308,14 @@ export default function RunPage() {
             {meta && <span style={{ fontSize: 12, padding: "8px 16px", borderRadius: 50, background: "var(--card)", boxShadow: "var(--shadow-sm)", border: "1.5px solid rgba(15,18,64,0.08)", color: "var(--dim)", marginLeft: "auto" }}>{meta.tokens.toLocaleString()} tok / ${meta.costUsd.toFixed(4)}</span>}
           </div>
 
+          {/* Error banner in document view */}
+          {error && (
+            <div style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 12, padding: "12px 16px", marginBottom: 14, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+              <p style={{ fontSize: 13, color: "#ef4444", lineHeight: 1.5, margin: 0 }}>{error}</p>
+              <button onClick={() => setError("")} style={{ fontSize: 20, lineHeight: 1, background: "none", border: "none", cursor: "pointer", color: "#ef4444", flexShrink: 0, padding: 0 }}>×</button>
+            </div>
+          )}
+
           {/* QA Panel */}
           {showQAResult && qaReport && (
             <div className="qa-panel" style={{ ...card, padding: "20px", marginBottom: 18 }}>
