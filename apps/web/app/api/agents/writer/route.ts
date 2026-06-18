@@ -160,7 +160,7 @@ Write the full document now as the JSON object.`;
           },
           body: JSON.stringify({
             model: MODEL,
-            max_tokens: 5500,
+            max_tokens: 8000,
             system: systemPrompt,
             messages: [{ role: "user", content: userMessage }],
             stream: true,
