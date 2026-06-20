@@ -14,6 +14,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="uk">
+      <head> 
+        <meta name="base:app_id" content="6a372406b687afed410f365b" /> 
+      </head>
       <body className="antialiased min-h-screen" style={{ background: "var(--bg)", color: "var(--text)" }}>
         {children}
       </body>
