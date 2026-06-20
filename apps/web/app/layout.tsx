@@ -5,6 +5,9 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Agent Studio",
   description: "AI-powered Web3 document generation",
+  other: {
+    "base:app_id": "6a372406b687afed410f365b",
+  },
 };
 
 export default function RootLayout({
