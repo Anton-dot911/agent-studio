@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { Checkout, CheckoutButton, CheckoutStatus, type LifecycleStatus } from "@coinbase/onchainkit/checkout";
 
 type RunStatus =
   | "idle"
@@ -79,6 +80,9 @@ export default function RunPage() {
   const [elapsed, setElapsed] = useState(0);
   const [meta, setMeta] = useState<{ costUsd: number; tokens: number } | null>(null);
   const [wasRevised, setWasRevised] = useState(false);
+  const [isPaid, setIsPaid] = useState(false);
+  const [chargeId, setChargeId] = useState<string | null>(null);
+  const [checkoutError, setCheckoutError] = useState("");
 
   const set = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }));
   const card = { background: "var(--card)", borderRadius: 20, boxShadow: "var(--shadow)" } as React.CSSProperties;
@@ -133,10 +137,39 @@ export default function RunPage() {
     throw new Error("Stream ended without result");
   };
 
+  // ── Payment: create Coinbase Commerce charge ──────────────────────────────
+  const createCharge = async () => {
+    setCheckoutError("");
+    try {
+      const res = await fetch("/api/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectName: form.projectName, documentType: form.documentNeeds }),
+      });
+      const data = await res.json() as { chargeId?: string; error?: string };
+      if (!res.ok || !data.chargeId) throw new Error(data.error ?? "Failed to create charge");
+      setChargeId(data.chargeId);
+    } catch (e) {
+      setCheckoutError(e instanceof Error ? e.message : "Payment setup failed");
+    }
+  };
+
+  const handleCheckoutStatus = (s: LifecycleStatus) => {
+    if (s.statusName === "success") {
+      setIsPaid(true);
+      setChargeId(null);
+      runWriter();
+    }
+    if (s.statusName === "error") {
+      setCheckoutError("Payment failed. Please try again.");
+      setChargeId(null);
+    }
+  };
+
   // ── Step 1: Research ───────────────────────────────────────────────────────
   const runResearch = async () => {
     if (!form.projectName) { setError("Enter a project name to continue"); return; }
-    setStatus("running"); setResearchResult(null); setSpec(null); setQaReport(null); setError(""); setMeta(null); setWasRevised(false);
+    setStatus("running"); setResearchResult(null); setSpec(null); setQaReport(null); setError(""); setMeta(null); setWasRevised(false); setIsPaid(false); setChargeId(null);
     const timer = startTimer(s => setElapsed(s));
     try {
       const { data, meta } = await fetchSSE("/api/agents/research", { projectId: "p_" + Date.now(), intakeData: form });
@@ -566,11 +599,31 @@ export default function RunPage() {
             <button onClick={() => { setStatus("idle"); setResearchResult(null); setSpec(null); }} style={{ fontSize: 12, padding: "7px 18px", borderRadius: 50, background: "var(--card)", boxShadow: "var(--shadow-sm)", color: "var(--text)", border: "1.5px solid rgba(15,18,64,0.10)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>New</button>
           </div>
 
-          <button onClick={runWriter} style={{ ...card, width: "100%", padding: "20px 22px", marginBottom: 18, cursor: "pointer", border: "1.5px solid rgba(15,18,64,0.06)", textAlign: "left", display: "block" }}>
-            <p style={{ fontSize: 10, letterSpacing: "3px", textTransform: "uppercase", color: "var(--accent)", marginBottom: 8, fontWeight: 700 }}>Step 2</p>
-            <p style={{ fontSize: 17, fontWeight: 700, color: "var(--bright)", marginBottom: 4 }}>Generate full Tech Spec</p>
-            <p style={{ fontSize: 12.5, color: "var(--dim)", lineHeight: 1.5 }}>Writer Agent turns this research into a client-ready document → QA check → deliver by email.</p>
-          </button>
+          {/* Step 2: Payment gate → Writer */}
+          {!isPaid && !chargeId && (
+            <div style={{ ...card, padding: "20px 22px", marginBottom: 18, border: "1.5px solid rgba(15,18,64,0.06)" }}>
+              <p style={{ fontSize: 10, letterSpacing: "3px", textTransform: "uppercase", color: "var(--accent)", marginBottom: 8, fontWeight: 700 }}>Step 2</p>
+              <p style={{ fontSize: 17, fontWeight: 700, color: "var(--bright)", marginBottom: 4 }}>Generate full document</p>
+              <p style={{ fontSize: 12.5, color: "var(--dim)", lineHeight: 1.5, marginBottom: 16 }}>Writer → QA → Revise → PDF. One-time payment of <strong>$1 USDC</strong> on Base Sepolia.</p>
+              <button onClick={createCharge} style={{ width: "100%", padding: "14px 18px", borderRadius: 50, background: "var(--accent)", color: "#fff", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 14, boxShadow: "0 4px 16px rgba(33,37,102,0.28)" }}>
+                Pay $1 USDC &amp; Generate
+              </button>
+              {checkoutError && <p style={{ fontSize: 12, color: "#ef4444", marginTop: 8 }}>{checkoutError}</p>}
+            </div>
+          )}
+
+          {/* Coinbase Commerce Checkout */}
+          {chargeId && !isPaid && (
+            <div style={{ ...card, padding: "20px 22px", marginBottom: 18 }}>
+              <p style={{ fontSize: 10, letterSpacing: "3px", textTransform: "uppercase", color: "var(--accent)", marginBottom: 12, fontWeight: 700 }}>Payment</p>
+              <Checkout chargeId={chargeId} onStatus={handleCheckoutStatus}>
+                <CheckoutButton style={{ width: "100%", borderRadius: 50 }} />
+                <CheckoutStatus />
+              </Checkout>
+              {checkoutError && <p style={{ fontSize: 12, color: "#ef4444", marginTop: 8 }}>{checkoutError}</p>}
+              <button onClick={() => setChargeId(null)} style={{ width: "100%", marginTop: 10, padding: "10px", borderRadius: 50, background: "none", border: "1.5px solid rgba(15,18,64,0.12)", cursor: "pointer", fontFamily: "inherit", fontSize: 12, color: "var(--dim)" }}>Cancel</button>
+            </div>
+          )}
 
           {error && <div style={{ ...card, padding: "14px 16px", marginBottom: 16, color: "#c83838", fontSize: 13 }}>{error}</div>}
 

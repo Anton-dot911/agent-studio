@@ -1,6 +1,7 @@
-// apps/web/app/layout.tsx
 import type { Metadata } from "next";
 import "./globals.css";
+import "@coinbase/onchainkit/styles.css";
+import { Providers } from "./providers";
 
 export const metadata: Metadata = {
   title: "Agent Studio",
@@ -10,15 +11,11 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="uk">
       <body className="antialiased min-h-screen" style={{ background: "var(--bg)", color: "var(--text)" }}>
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );
