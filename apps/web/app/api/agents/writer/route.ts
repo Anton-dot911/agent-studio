@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 
+export const runtime = "edge";
 export const maxDuration = 120;
 
 const MODEL = "claude-haiku-4-5-20251001";
