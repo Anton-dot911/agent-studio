@@ -10,23 +10,29 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "latest",
+    "@coinbase/onchainkit": "^1.1.2",
     "@supabase/supabase-js": "latest",
+    "@tanstack/react-query": "^5.101.0",
     "next": "16.1.5",
     "react": "^19.1.2",
     "react-dom": "^19.1.2",
-    "resend": "latest"
+    "resend": "latest",
+    "viem": "^2.53.1",
+    "wagmi": "^2.19.5",
+    "x402": "^1.2.0",
+    "x402-next": "^1.2.0"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^22.0.0",
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
     "eslint": "^9.0.0",
     "eslint-config-next": "16.1.5",
     "tailwindcss": "^4.0.0",
-    "@tailwindcss/postcss": "^4.0.0",
     "typescript": "^5.8.0"
   },
-"overrides": {
+  "overrides": {
     "node-domexception": false
   }
 }
