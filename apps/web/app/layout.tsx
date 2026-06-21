@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   title: "Agent Studio",
   description: "AI-powered Web3 document generation",
   other: {
-    "base:app_id": "6a372406b687afed410f365b",
+    "base:app_id": "6a372b925b44c07f071b0ab5",
   },
 };
 
