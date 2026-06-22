@@ -6,5 +6,10 @@
 [build.environment]
   NODE_VERSION = "20"
 
+# Custom functions (incl. the generate-background worker) live alongside the
+# plugin-generated Next.js functions. Path is relative to `base` (apps/web).
+[functions]
+  directory = "netlify/functions"
+
 [[plugins]]
   package = "@netlify/plugin-nextjs"

@@ -135,6 +135,34 @@ export default function RunPage() {
     throw new Error("Stream ended without result");
   };
 
+  // ── Async job helper (Writer / Reviser) ────────────────────────────────────
+  // Writer and Reviser run on Sonnet via a Netlify Background Function (up to 15 min),
+  // so they can produce a full-quality document without hitting the request timeout.
+  // We start the job, then poll its status in Supabase until it finishes.
+  const runJob = async (
+    kind: "writer" | "revise",
+    input: object
+  ): Promise<{ data: Record<string, unknown>; meta: Record<string, unknown> }> => {
+    const startRes = await fetch("/api/generate/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind, input }),
+    });
+    const startData = await startRes.json() as { jobId?: string; error?: string };
+    if (!startRes.ok || !startData.jobId) throw new Error(startData.error ?? "Failed to start generation");
+
+    const deadline = Date.now() + 13 * 60 * 1000; // 13 min, under the 15 min worker limit
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 3000));
+      const sRes = await fetch(`/api/generate/status?jobId=${startData.jobId}`);
+      const sData = await sRes.json() as { status?: string; output?: Record<string, unknown>; meta?: Record<string, unknown>; error?: string };
+      if (!sRes.ok) throw new Error(sData.error ?? "Status check failed");
+      if (sData.status === "done") return { data: sData.output ?? {}, meta: sData.meta ?? {} };
+      if (sData.status === "error") throw new Error(sData.error ?? "Generation failed");
+    }
+    throw new Error("Generation timed out");
+  };
+
 
   // ── Step 1: Research ───────────────────────────────────────────────────────
   const runResearch = async () => {
@@ -159,7 +187,7 @@ export default function RunPage() {
     setStatus("writing"); setError("");
     const timer = startTimer(s => setElapsed(s));
     try {
-      const { data, meta } = await fetchSSE("/api/agents/writer", { projectId: "p_" + Date.now(), intakeData: form, researchReport: researchResult });
+      const { data, meta } = await runJob("writer", { intakeData: form, researchReport: researchResult });
       timer.stop();
       setSpec(data as unknown as TechSpec);
       setMeta({ costUsd: (meta.costUsd as number) ?? 0, tokens: ((meta.inputTokens as number) ?? 0) + ((meta.outputTokens as number) ?? 0) });
@@ -194,7 +222,7 @@ export default function RunPage() {
     setStatus("revising"); setError("");
     const timer = startTimer(s => setElapsed(s));
     try {
-      const { data, meta } = await fetchSSE("/api/agents/revise", { techSpec: spec, qaReport, intakeData: form, documentType: form.documentNeeds });
+      const { data, meta } = await runJob("revise", { techSpec: spec, qaReport, intakeData: form, documentType: form.documentNeeds });
       timer.stop();
       setSpec(data as unknown as TechSpec);
       setQaReport(null);
