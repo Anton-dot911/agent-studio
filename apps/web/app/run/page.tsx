@@ -56,6 +56,20 @@ const INIT: Record<string, string> = {
   timeline: "", budget: "", documentNeeds: "Tech Spec",
 };
 
+const TEST_DATA: Record<string, string> = {
+  projectName: "ProofFlow AI",
+  concept: "ProofFlow AI is an AI-powered verification platform for Web3 teams that automatically reviews project documentation, smart contract architecture, tokenomics assumptions, and public claims before launch. The system compares whitepapers, GitHub repositories, contract ABIs, token distribution data, and website content to detect inconsistencies, missing security details, unrealistic promises, and potential investor-risk signals. It generates a structured technical risk report for founders, auditors, launchpads, and early investors.",
+  problem: "Web3 projects often publish incomplete or inconsistent technical documentation before launch. Investors, auditors, and launchpads waste time manually checking claims, tokenomics, contract structure, and security readiness. There is no simple automated pre-audit layer that detects documentation gaps, technical contradictions, and launch risks before expensive manual review.",
+  targetAudience: "Web3 startup founders, smart contract auditors, launchpads, venture analysts, DAO contributors, token investors, and accelerator programs that review early-stage blockchain projects.",
+  blockchain: "Ethereum, Base, Arbitrum, Polygon, or N/A",
+  existingCode: "None",
+  competitors: "CertiK Skynet, Token Sniffer, De.Fi Scanner, RugDoc, SolidityScan, GoPlus Security, Dune dashboards, manual audit firms",
+  teamInfo: "2 full-stack developers, 1 AI/LLM engineer, 1 smart contract/security specialist, 1 product designer",
+  timeline: "MVP 10 weeks",
+  budget: "$40k-70k",
+  documentNeeds: "Tech Spec",
+};
+
 const DOC_TYPES = [
   { value: "Tech Spec", label: "Tech Spec", desc: "Architecture, contracts, API, deployment" },
   { value: "Tokenomics", label: "Tokenomics", desc: "Token model, distribution, vesting, governance" },
@@ -528,7 +542,10 @@ export default function RunPage() {
 
       {(status === "idle" || status === "error") && (
         <div>
-          <h2 style={{ fontSize: 25, fontWeight: 800, color: "var(--bright)", marginBottom: 8, letterSpacing: "-0.3px" }}>Intake form</h2>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
+            <h2 style={{ fontSize: 25, fontWeight: 800, color: "var(--bright)", letterSpacing: "-0.3px" }}>Intake form</h2>
+            <button onClick={() => setForm(TEST_DATA)} style={{ fontSize: 11, padding: "5px 14px", borderRadius: 50, background: "var(--card)", boxShadow: "var(--shadow-sm)", color: "var(--dim)", border: "1.5px solid rgba(15,18,64,0.10)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, whiteSpace: "nowrap" }}>Load test data</button>
+          </div>
           <p style={{ fontSize: 14, color: "var(--dim)", marginBottom: 26, lineHeight: 1.6 }}>Fill the fields below. The agent returns its analysis in about 45 seconds.</p>
           <div style={{ display: "flex", flexDirection: "column", gap: 18, marginBottom: 24 }}>
             {FIELDS.map(({ key, label, hint, rows }) => {
