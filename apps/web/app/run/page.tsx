@@ -615,14 +615,39 @@ export default function RunPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             {Object.entries(researchResult).map(([key, val]) => {
               const accent = key === "redFlags" ? "#c83838" : key === "opportunities" ? "var(--green)" : "var(--accent)";
+              const renderVal = (v: unknown, depth = 0): React.ReactNode => {
+                if (v === null || v === undefined) return null;
+                if (typeof v === "string") return <span>{v}</span>;
+                if (typeof v === "number" || typeof v === "boolean") return <span>{String(v)}</span>;
+                if (Array.isArray(v)) {
+                  if (v.length === 0) return null;
+                  if (typeof v[0] === "string" || typeof v[0] === "number") {
+                    return <ul style={{ margin: "4px 0 0 14px", padding: 0 }}>{(v as string[]).map((item, i) => <li key={i} style={{ marginBottom: 4 }}>{item}</li>)}</ul>;
+                  }
+                  return <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>{(v as unknown[]).map((item, i) => <div key={i} style={{ background: "var(--bg)", borderRadius: 8, padding: "10px 12px" }}>{renderVal(item, depth + 1)}</div>)}</div>;
+                }
+                if (typeof v === "object") {
+                  return (
+                    <div style={{ display: "flex", flexDirection: "column", gap: depth === 0 ? 10 : 6 }}>
+                      {Object.entries(v as Record<string, unknown>).map(([k, vv]) => (
+                        <div key={k}>
+                          <span style={{ fontSize: 10, letterSpacing: "1px", textTransform: "uppercase", color: "var(--dim)", fontWeight: 700 }}>{k.replace(/([A-Z])/g, " $1")}</span>
+                          <div style={{ marginTop: 3 }}>{renderVal(vv, depth + 1)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                }
+                return null;
+              };
               return (
                 <div key={key} style={{ ...card, overflow: "hidden" }}>
                   <div style={{ padding: "12px 18px", display: "flex", alignItems: "center", gap: 9 }}>
                     <div style={{ width: 7, height: 7, borderRadius: "50%", background: accent }} />
                     <span style={{ fontSize: 11, letterSpacing: "1.5px", textTransform: "uppercase", fontWeight: 700, color: accent }}>{key.replace(/([A-Z])/g, " $1")}</span>
                   </div>
-                  <div style={{ padding: "0 18px 16px", fontSize: 13, color: "var(--text)", lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
-                    {typeof val === "string" ? val : JSON.stringify(val, null, 2)}
+                  <div style={{ padding: "0 18px 16px", fontSize: 13, color: "var(--text)", lineHeight: 1.7 }}>
+                    {renderVal(val)}
                   </div>
                 </div>
               );
