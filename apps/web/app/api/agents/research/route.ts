@@ -78,7 +78,7 @@ Document Needs: ${intakeData.documentNeeds}`;
           },
           body: JSON.stringify({
             model: MODEL,
-            max_tokens: 3500,
+            max_tokens: 5000,
             system: SYSTEM_PROMPT,
             messages: [{ role: "user", content: userMessage }],
             stream: true,
@@ -135,7 +135,30 @@ Document Needs: ${intakeData.documentNeeds}`;
         const clean = fullText.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```\s*$/i, "").trim();
         let data;
         try { data = JSON.parse(clean); }
-        catch { const m = clean.match(/\{[\s\S]*\}/); if (m) data = JSON.parse(m[0]); else throw new Error("Failed to parse response"); }
+        catch {
+          // Try to extract the JSON object and repair truncated output
+          const m = clean.match(/\{[\s\S]*/);
+          if (!m) throw new Error("No JSON object found in response");
+          let fragment = m[0];
+          try { data = JSON.parse(fragment); }
+          catch {
+            // Close any open structures left by token-limit truncation
+            fragment = fragment.replace(/,\s*$/, "");
+            let opens = 0;
+            let inStr = false, esc = false;
+            for (const c of fragment) {
+              if (esc) { esc = false; continue; }
+              if (c === "\\" && inStr) { esc = true; continue; }
+              if (c === '"') { inStr = !inStr; continue; }
+              if (!inStr) { if (c === "{" || c === "[") opens++; else if (c === "}" || c === "]") opens--; }
+            }
+            // If we're still inside a string, truncate to last safe '"'
+            if (inStr) { fragment = fragment.slice(0, fragment.lastIndexOf('"')); opens++; }
+            fragment += "}".repeat(Math.max(0, opens));
+            try { data = JSON.parse(fragment); }
+            catch { throw new Error("Failed to parse model response as JSON"); }
+          }
+        }
 
         send({
           type: "done",
