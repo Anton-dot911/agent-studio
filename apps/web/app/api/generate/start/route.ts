@@ -40,15 +40,30 @@ export async function POST(req: NextRequest) {
   // functions, so this await resolves fast while the work continues asynchronously.
   // Use the request origin so deploy previews hit their own background function.
   const origin = new URL(req.url).origin;
+  const fnUrl = `${origin}/.netlify/functions/generate-background`;
+  let triggerStatus = 0;
   try {
-    await fetch(`${origin}/.netlify/functions/generate-background`, {
+    const triggerRes = await fetch(fnUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ jobId: job.id }),
     });
-  } catch {
-    // If the trigger fails the job stays "pending"; the client will surface a timeout.
-    // Don't fail the request — the job row exists and can be retried.
+    triggerStatus = triggerRes.status;
+  } catch (e) {
+    triggerStatus = 0;
+  }
+
+  // 202 = background function accepted. Anything else means the function isn't deployed
+  // or is unreachable — fail fast so the client shows an error instead of waiting 13 min.
+  if (triggerStatus !== 202) {
+    await supabase
+      .from(JOBS_TABLE)
+      .update({ status: "error", error: `Background function unavailable (HTTP ${triggerStatus || "network error"}). Deploy may still be in progress — try again in ~1 minute.` })
+      .eq("id", job.id);
+    return NextResponse.json(
+      { error: `Generation service unavailable (${triggerStatus || "network error"}). If Netlify just deployed, wait ~1 min and retry.` },
+      { status: 503 },
+    );
   }
 
   return NextResponse.json({ jobId: job.id });
