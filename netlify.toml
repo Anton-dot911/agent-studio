@@ -4,7 +4,7 @@
   publish = ".next"
 
 [build.environment]
-  NODE_VERSION = "20"
+  NODE_VERSION = "22"
 
 # Custom functions (incl. the generate-background worker) live alongside the
 # plugin-generated Next.js functions. Path is relative to `base` (apps/web).
