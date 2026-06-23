@@ -590,7 +590,15 @@ export default function RunPage() {
             <span style={{ fontSize: 14, letterSpacing: "3px", textTransform: "uppercase" }}>{status === "writing" ? "Writing" : "Researching"} {elapsed}s</span>
           </div>
           <p style={{ fontSize: 13, color: "var(--dim)", marginTop: 18 }}>
-            {status === "writing" ? "Drafting the full technical specification..." : "Analyzing project, market and competitors..."}
+            {status === "writing"
+              ? elapsed < 30
+                ? "Starting background generation — Sonnet 4.6 drafting the full technical specification..."
+                : elapsed < 120
+                ? "Generation in progress — Sonnet 4.6 is writing all 10 sections (~3-5 min total)..."
+                : elapsed < 240
+                ? `Almost there — large documents take 3-5 min. Running for ${Math.floor(elapsed / 60)}m ${elapsed % 60}s...`
+                : `Still writing — complex Tech Specs can take up to 7 min. Please don't close the tab. (${Math.floor(elapsed / 60)}m ${elapsed % 60}s)`
+              : "Analyzing project, market and competitors..."}
           </p>
           {/* Pipeline progress */}
           <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 32 }}>
