@@ -160,6 +160,9 @@ async function callAnthropic(
   userMessage: string,
   maxTokens = 8000,
 ): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
+  const abort = new AbortController();
+  const timeoutId = setTimeout(() => abort.abort(), 10 * 60 * 1000); // 10 min hard limit
+
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -173,7 +176,8 @@ async function callAnthropic(
       system,
       messages: [{ role: "user", content: userMessage }],
     }),
-  });
+    signal: abort.signal,
+  }).finally(() => clearTimeout(timeoutId));
 
   if (!res.ok) {
     const errText = await res.text();
