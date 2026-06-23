@@ -155,12 +155,13 @@ export default function RunPage() {
   // We start the job, then poll its status in Supabase until it finishes.
   const runJob = async (
     kind: "writer" | "revise",
-    input: object
+    input: object,
+    paymentTxHash?: string
   ): Promise<{ data: Record<string, unknown>; meta: Record<string, unknown> }> => {
     const startRes = await fetch("/api/generate/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind, input }),
+      body: JSON.stringify({ kind, input, paymentTxHash }),
     });
     const startData = await startRes.json() as { jobId?: string; error?: string };
     if (!startRes.ok || !startData.jobId) throw new Error(startData.error ?? "Failed to start generation");
@@ -209,11 +210,11 @@ export default function RunPage() {
   };
 
   // ── Step 2: Writer ─────────────────────────────────────────────────────────
-  const runWriter = async () => {
+  const runWriter = async (paymentTxHash: string) => {
     setStatus("writing"); setError("");
     const timer = startTimer(s => setElapsed(s));
     try {
-      const { data, meta } = await runJob("writer", { intakeData: form, researchReport: researchResult });
+      const { data, meta } = await runJob("writer", { intakeData: form, researchReport: researchResult }, paymentTxHash);
       timer.stop();
       setSpec(data as unknown as TechSpec);
       setMeta({ costUsd: (meta.costUsd as number) ?? 0, tokens: ((meta.inputTokens as number) ?? 0) + ((meta.outputTokens as number) ?? 0) });
@@ -642,7 +643,7 @@ export default function RunPage() {
               <p style={{ fontSize: 12.5, color: "var(--dim)", lineHeight: 1.5, marginBottom: 16 }}>Writer → QA → Revise → PDF. One-time payment of <strong>$1 USDC</strong> on Base Sepolia.</p>
               <PayAndGenerate
                 disabled={!form.projectName}
-                onPaid={() => { setIsPaid(true); void runWriter(); }}
+                onPaid={(txHash) => { setIsPaid(true); void runWriter(txHash); }}
               />
             </div>
           )}
