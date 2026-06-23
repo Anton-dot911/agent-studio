@@ -1,4 +1,7 @@
-import { createClient } from "@supabase/supabase-js";
+// Use direct Supabase REST API calls (no @supabase/supabase-js client) to avoid the
+// WebSocket initialisation that @supabase/realtime-js performs at createClient() time.
+// That initialisation crashes on Node.js < 22 because there is no built-in WebSocket,
+// and Netlify Lambda functions run on Node.js 20 regardless of NODE_VERSION in netlify.toml.
 import {
   generateWriter,
   generateRevise,
@@ -7,6 +10,31 @@ import {
 } from "../../lib/agents/generate";
 
 const JOBS_TABLE = "as_generation_jobs";
+
+// Minimal REST helpers — all Supabase REST calls are just fetch under the hood.
+async function sbSelect(url: string, key: string, table: string, id: string) {
+  const res = await fetch(`${url}/rest/v1/${table}?id=eq.${id}&select=id,kind,status,input&limit=1`, {
+    headers: { apikey: key, Authorization: `Bearer ${key}`, Accept: "application/json" },
+  });
+  if (!res.ok) return { data: null, error: `${res.status} ${await res.text()}` };
+  const rows = (await res.json()) as Record<string, unknown>[];
+  return { data: rows[0] ?? null, error: null };
+}
+
+async function sbUpdate(url: string, key: string, table: string, id: string, patch: Record<string, unknown>) {
+  const res = await fetch(`${url}/rest/v1/${table}?id=eq.${id}`, {
+    method: "PATCH",
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+      Prefer: "return=minimal",
+    },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) return `${res.status} ${await res.text()}`;
+  return null;
+}
 
 export default async (req: Request) => {
   let jobId: string | undefined;
@@ -22,35 +50,28 @@ export default async (req: Request) => {
     return new Response("jobId required", { status: 400 });
   }
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!url || !serviceKey || !apiKey) {
-    console.error("[bg] Missing env vars — url:", !!url, "serviceKey:", !!serviceKey, "apiKey:", !!apiKey);
+  if (!supabaseUrl || !serviceKey || !apiKey) {
+    console.error("[bg] Missing env vars — url:", !!supabaseUrl, "serviceKey:", !!serviceKey, "apiKey:", !!apiKey);
     return new Response("Server not configured", { status: 500 });
   }
 
-  const supabase = createClient(url, serviceKey, { auth: { persistSession: false } });
-
   try {
     console.log("[bg] Loading job", jobId);
-    const { data: job, error: loadErr } = await supabase
-      .from(JOBS_TABLE)
-      .select("id, kind, status, input")
-      .eq("id", jobId)
-      .single();
-
+    const { data: job, error: loadErr } = await sbSelect(supabaseUrl, serviceKey, JOBS_TABLE, jobId);
     if (loadErr || !job) {
-      console.error("[bg] Job not found:", loadErr?.message ?? "no data");
+      console.error("[bg] Job not found:", loadErr ?? "no data");
       return new Response("Job not found", { status: 404 });
     }
 
     console.log("[bg] Setting job to running, kind =", job.kind);
-    const { error: runningErr } = await supabase
-      .from(JOBS_TABLE)
-      .update({ status: "running", updated_at: new Date().toISOString() })
-      .eq("id", jobId);
-    if (runningErr) console.error("[bg] Failed to set running:", runningErr.message);
+    const runningErr = await sbUpdate(supabaseUrl, serviceKey, JOBS_TABLE, jobId, {
+      status: "running",
+      updated_at: new Date().toISOString(),
+    });
+    if (runningErr) console.error("[bg] Failed to set running:", runningErr);
 
     console.log("[bg] Starting generation...");
     const result =
@@ -58,24 +79,21 @@ export default async (req: Request) => {
         ? await generateWriter(apiKey, job.input as WriterInput)
         : await generateRevise(apiKey, job.input as ReviseInput);
 
-    console.log("[bg] Generation complete, writing result to Supabase");
-    const { error: doneErr } = await supabase
-      .from(JOBS_TABLE)
-      .update({
-        status: "done",
-        output: result.data,
-        meta: result.meta,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", jobId);
+    console.log("[bg] Generation complete, writing result");
+    const doneErr = await sbUpdate(supabaseUrl, serviceKey, JOBS_TABLE, jobId, {
+      status: "done",
+      output: result.data,
+      meta: result.meta,
+      updated_at: new Date().toISOString(),
+    });
 
     if (doneErr) {
-      console.error("[bg] Failed to write done result:", doneErr.message, "code:", doneErr.code);
-      // Try a simpler update without the large output to confirm DB connectivity
-      await supabase
-        .from(JOBS_TABLE)
-        .update({ status: "error", error: `DB write failed: ${doneErr.message}`, updated_at: new Date().toISOString() })
-        .eq("id", jobId);
+      console.error("[bg] Failed to write done result:", doneErr);
+      await sbUpdate(supabaseUrl, serviceKey, JOBS_TABLE, jobId, {
+        status: "error",
+        error: `DB write failed: ${doneErr}`,
+        updated_at: new Date().toISOString(),
+      });
       return new Response("db-error", { status: 200 });
     }
 
@@ -84,11 +102,11 @@ export default async (req: Request) => {
   } catch (e) {
     const errorMsg = e instanceof Error ? e.message : "Generation failed";
     console.error("[bg] Unhandled error for job", jobId, ":", errorMsg);
-    const { error: errUpdateErr } = await supabase
-      .from(JOBS_TABLE)
-      .update({ status: "error", error: errorMsg, updated_at: new Date().toISOString() })
-      .eq("id", jobId);
-    if (errUpdateErr) console.error("[bg] Also failed to write error status:", errUpdateErr.message);
+    await sbUpdate(supabaseUrl, serviceKey, JOBS_TABLE, jobId, {
+      status: "error",
+      error: errorMsg,
+      updated_at: new Date().toISOString(),
+    });
     return new Response("error", { status: 200 });
   }
 };
