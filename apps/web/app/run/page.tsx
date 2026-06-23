@@ -165,17 +165,29 @@ export default function RunPage() {
     const startData = await startRes.json() as { jobId?: string; error?: string };
     if (!startRes.ok || !startData.jobId) throw new Error(startData.error ?? "Failed to start generation");
 
-    const deadline = Date.now() + 13 * 60 * 1000; // 13 min, under the 15 min worker limit
-    while (Date.now() < deadline) {
-      await new Promise(r => setTimeout(r, 3000));
-      const sRes = await fetch(`/api/generate/status?jobId=${startData.jobId}`);
+    const poll = async (jobId: string) => {
+      const sRes = await fetch(`/api/generate/status?jobId=${jobId}`);
       const sData = await sRes.json() as { status?: string; output?: Record<string, unknown>; meta?: Record<string, unknown>; error?: string };
       if (!sRes.ok) throw new Error(sData.error ?? "Status check failed");
+      return sData;
+    };
+
+    // Poll for up to 14 min (background function limit is 15 min)
+    const deadline = Date.now() + 14 * 60 * 1000;
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 3000));
+      const sData = await poll(startData.jobId);
       if (sData.status === "done") return { data: sData.output ?? {}, meta: sData.meta ?? {} };
       if (sData.status === "error") throw new Error(sData.error ?? "Generation failed");
     }
-    throw new Error("Generation timed out");
+
+    // Final check: background function may have just finished as the client timed out
+    const finalCheck = await poll(startData.jobId).catch(() => null);
+    if (finalCheck?.status === "done") return { data: finalCheck.output ?? {}, meta: finalCheck.meta ?? {} };
+
+    throw new Error("Generation timed out after 14 min. The background worker may have hit an internal error — check Netlify function logs.");
   };
+
 
 
   // ── Step 1: Research ───────────────────────────────────────────────────────

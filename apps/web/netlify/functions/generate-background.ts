@@ -1,12 +1,3 @@
-// Netlify Background Function — runs up to 15 minutes (the "-background" suffix is
-// what makes it asynchronous), so it can generate the full document with Sonnet 4.6
-// without hitting the ~60s edge / 26s serverless limits that broke the old in-request
-// streaming approach.
-//
-// Flow: the /api/generate/start route inserts a job row and fires this function with
-// { jobId }. We load the job, run the Writer or Reviser, and write the result back to
-// Supabase. The client polls /api/generate/status until status is "done" or "error".
-
 import { createClient } from "@supabase/supabase-js";
 import {
   generateWriter,
@@ -23,42 +14,52 @@ export default async (req: Request) => {
     const body = (await req.json()) as { jobId?: string };
     jobId = body.jobId;
   } catch {
+    console.error("[bg] Failed to parse request body");
     return new Response("Invalid body", { status: 400 });
   }
-  if (!jobId) return new Response("jobId required", { status: 400 });
+  if (!jobId) {
+    console.error("[bg] No jobId in request");
+    return new Response("jobId required", { status: 400 });
+  }
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!url || !serviceKey || !apiKey) {
+    console.error("[bg] Missing env vars — url:", !!url, "serviceKey:", !!serviceKey, "apiKey:", !!apiKey);
     return new Response("Server not configured", { status: 500 });
   }
 
   const supabase = createClient(url, serviceKey, { auth: { persistSession: false } });
 
-  // Load the job
-  const { data: job, error: loadErr } = await supabase
-    .from(JOBS_TABLE)
-    .select("id, kind, status, input")
-    .eq("id", jobId)
-    .single();
-
-  if (loadErr || !job) {
-    return new Response("Job not found", { status: 404 });
-  }
-
-  await supabase
-    .from(JOBS_TABLE)
-    .update({ status: "running", updated_at: new Date().toISOString() })
-    .eq("id", jobId);
-
   try {
+    console.log("[bg] Loading job", jobId);
+    const { data: job, error: loadErr } = await supabase
+      .from(JOBS_TABLE)
+      .select("id, kind, status, input")
+      .eq("id", jobId)
+      .single();
+
+    if (loadErr || !job) {
+      console.error("[bg] Job not found:", loadErr?.message ?? "no data");
+      return new Response("Job not found", { status: 404 });
+    }
+
+    console.log("[bg] Setting job to running, kind =", job.kind);
+    const { error: runningErr } = await supabase
+      .from(JOBS_TABLE)
+      .update({ status: "running", updated_at: new Date().toISOString() })
+      .eq("id", jobId);
+    if (runningErr) console.error("[bg] Failed to set running:", runningErr.message);
+
+    console.log("[bg] Starting generation...");
     const result =
       job.kind === "writer"
         ? await generateWriter(apiKey, job.input as WriterInput)
         : await generateRevise(apiKey, job.input as ReviseInput);
 
-    await supabase
+    console.log("[bg] Generation complete, writing result to Supabase");
+    const { error: doneErr } = await supabase
       .from(JOBS_TABLE)
       .update({
         status: "done",
@@ -68,17 +69,26 @@ export default async (req: Request) => {
       })
       .eq("id", jobId);
 
+    if (doneErr) {
+      console.error("[bg] Failed to write done result:", doneErr.message, "code:", doneErr.code);
+      // Try a simpler update without the large output to confirm DB connectivity
+      await supabase
+        .from(JOBS_TABLE)
+        .update({ status: "error", error: `DB write failed: ${doneErr.message}`, updated_at: new Date().toISOString() })
+        .eq("id", jobId);
+      return new Response("db-error", { status: 200 });
+    }
+
+    console.log("[bg] Job", jobId, "completed successfully");
     return new Response("ok", { status: 200 });
   } catch (e) {
-    await supabase
+    const errorMsg = e instanceof Error ? e.message : "Generation failed";
+    console.error("[bg] Unhandled error for job", jobId, ":", errorMsg);
+    const { error: errUpdateErr } = await supabase
       .from(JOBS_TABLE)
-      .update({
-        status: "error",
-        error: e instanceof Error ? e.message : "Generation failed",
-        updated_at: new Date().toISOString(),
-      })
+      .update({ status: "error", error: errorMsg, updated_at: new Date().toISOString() })
       .eq("id", jobId);
-
+    if (errUpdateErr) console.error("[bg] Also failed to write error status:", errUpdateErr.message);
     return new Response("error", { status: 200 });
   }
 };
