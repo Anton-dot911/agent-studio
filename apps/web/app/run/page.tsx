@@ -155,7 +155,7 @@ export default function RunPage() {
   // so they can produce a full-quality document without hitting the request timeout.
   // We start the job, then poll its status in Supabase until it finishes.
   const runJob = async (
-    kind: "writer" | "revise" | "critic",
+    kind: "writer" | "revise" | "critic" | "research",
     input: object,
     paymentTxHash?: string
   ): Promise<{ data: Record<string, unknown>; meta: Record<string, unknown> }> => {
@@ -198,7 +198,7 @@ export default function RunPage() {
     setStatus("running"); setResearchResult(null); setSpec(null); setQaReport(null); setCriticReport(null); setError(""); setMeta(null); setWasRevised(false); setIsPaid(false);
     const timer = startTimer(s => setElapsed(s));
     try {
-      const { data, meta } = await fetchSSE("/api/agents/research", { projectId: "p_" + Date.now(), intakeData: form });
+      const { data, meta } = await runJob("research", { intakeData: form });
       const secs = timer.stop(); setElapsed(secs);
       setResearchResult(data);
       setMeta({ costUsd: (meta.costUsd as number) ?? 0, tokens: ((meta.inputTokens as number) ?? 0) + ((meta.outputTokens as number) ?? 0) });

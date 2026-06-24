@@ -21,8 +21,8 @@ export async function POST(req: NextRequest) {
   }
 
   const { kind, input, paymentTxHash } = body;
-  if (kind !== "writer" && kind !== "revise" && kind !== "critic") {
-    return NextResponse.json({ error: "kind must be 'writer', 'critic' or 'revise'" }, { status: 400 });
+  if (kind !== "writer" && kind !== "revise" && kind !== "critic" && kind !== "research") {
+    return NextResponse.json({ error: "kind must be 'writer', 'critic', 'revise', or 'research'" }, { status: 400 });
   }
   if (!input || typeof input !== "object") {
     return NextResponse.json({ error: "input is required" }, { status: 400 });
