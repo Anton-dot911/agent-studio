@@ -8,7 +8,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 export const JOBS_TABLE = "as_generation_jobs";
 
-export type JobKind = "writer" | "revise" | "critic";
+export type JobKind = "writer" | "revise" | "critic" | "research";
 export type JobStatus = "pending" | "running" | "done" | "error";
 
 export interface GenerationJob {

@@ -9,6 +9,7 @@ import {
   type ReviseInput,
 } from "../../lib/agents/generate";
 import { generateCritic, type CriticInput } from "../../lib/agents/critic";
+import { generateResearch, type ResearchInput } from "../../lib/agents/research";
 
 const JOBS_TABLE = "as_generation_jobs";
 
@@ -80,6 +81,8 @@ export default async (req: Request) => {
       result = await generateWriter(apiKey, job.input as WriterInput);
     } else if (job.kind === "critic") {
       result = await generateCritic(apiKey, job.input as CriticInput);
+    } else if (job.kind === "research") {
+      result = await generateResearch(apiKey, job.input as ResearchInput);
     } else {
       result = await generateRevise(apiKey, job.input as ReviseInput);
     }
