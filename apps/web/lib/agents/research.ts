@@ -77,7 +77,7 @@ Research this project. Use web search to verify market figures and competitor fa
     },
     body: JSON.stringify({
       model: RESEARCH_MODEL,
-      max_tokens: 4500,
+      max_tokens: 8000,
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: userMessage }],
       tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }],
@@ -108,9 +108,30 @@ Research this project. Use web search to verify market figures and competitor fa
   try {
     data = JSON.parse(clean);
   } catch {
-    const m = clean.match(/\{[\s\S]*\}/);
-    if (m) data = JSON.parse(m[0]);
-    else throw new Error("Failed to parse research response as JSON");
+    // Repair JSON truncated by max_tokens: close any open braces/brackets cut off mid-output.
+    const m = clean.match(/\{[\s\S]*/);
+    if (!m) throw new Error("Failed to parse research response as JSON");
+    let fragment = m[0].replace(/,\s*$/, "");
+    try {
+      data = JSON.parse(fragment);
+    } catch {
+      let opens = 0;
+      let inStr = false;
+      let esc = false;
+      for (const c of fragment) {
+        if (esc) { esc = false; continue; }
+        if (c === "\\" && inStr) { esc = true; continue; }
+        if (c === '"') { inStr = !inStr; continue; }
+        if (!inStr) {
+          if (c === "{" || c === "[") opens++;
+          else if (c === "}" || c === "]") opens--;
+        }
+      }
+      if (inStr) { fragment = fragment.slice(0, fragment.lastIndexOf('"')); opens++; }
+      fragment += "}".repeat(Math.max(0, opens));
+      try { data = JSON.parse(fragment); }
+      catch { throw new Error("Failed to parse research response as JSON"); }
+    }
   }
 
   const inputTokens = json.usage?.input_tokens ?? 0;
