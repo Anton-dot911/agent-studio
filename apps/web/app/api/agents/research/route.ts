@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 
 export const runtime = "edge";
-export const maxDuration = 120;
+export const maxDuration = 240;
 
 // Upgraded to Sonnet 4.6 + native web search. Research now GROUNDS market claims
 // in real sources instead of generating plausible-sounding numbers from memory.
@@ -90,6 +90,7 @@ Research this project. Use web search to verify market figures and competitor fa
             "Content-Type": "application/json",
             "x-api-key": apiKey,
             "anthropic-version": "2023-06-01",
+            "anthropic-beta": "web-search-2025-03-05",
           },
           body: JSON.stringify({
             model: MODEL,
@@ -155,6 +156,7 @@ Research this project. Use web search to verify market figures and competitor fa
           }
         }
 
+        if (!fullText) throw new Error("Research returned no text — web search beta header may be missing or the model timed out");
         const clean = fullText.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```\s*$/i, "").trim();
         let data;
         try { data = JSON.parse(clean); }
