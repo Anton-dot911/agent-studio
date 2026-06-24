@@ -3,11 +3,22 @@ import { NextRequest } from "next/server";
 export const runtime = "edge";
 export const maxDuration = 120;
 
-const MODEL = "claude-haiku-4-5-20251001";
+// Upgraded to Sonnet 4.6 + native web search. Research now GROUNDS market claims
+// in real sources instead of generating plausible-sounding numbers from memory.
+// Every market-size / competitor / cost figure should carry a source URL so the
+// Writer cannot invent unsupported numbers (the root cause of "$50B+" with no cite).
+const MODEL = "claude-sonnet-4-6";
 
-const SYSTEM_PROMPT = `You are a senior Web3 research analyst. Analyze the client intake form and respond with ONLY a valid JSON object. No markdown, no code fences. Start with { and end with }.
+const SYSTEM_PROMPT = `You are a senior Web3 research analyst with web search. Analyze the client intake form and produce a research brief.
 
-Focus your analysis on what matters MOST for the requested document type:
+Use web search to VERIFY any market-size, TVL, competitor, pricing, or cost figure
+before stating it. Every quantitative market claim MUST include a source URL in the
+"sources" array. If you cannot find a source, state the figure as an explicit
+estimate and mark it as unverified - never present an unverified number as fact.
+
+Respond with ONLY a valid JSON object. No markdown, no code fences. Start with { and end with }.
+
+Focus on what matters MOST for the requested document type:
 - Tech Spec: technical architecture, stack choices, integration patterns
 - Tokenomics: token economics, market comparables, distribution models, vesting norms
 - DeFi Audit: attack vectors, known vulnerabilities in similar protocols, security patterns
@@ -15,14 +26,15 @@ Focus your analysis on what matters MOST for the requested document type:
 {
   "projectSummary": "string",
   "problemAnalysis": { "coreProblem": "string", "severity": "high", "existingSolutions": ["string"], "gap": "string" },
-  "marketContext": { "sector": "string", "tam": "string", "growthTrend": "string", "keyDrivers": ["string"] },
+  "marketContext": { "sector": "string", "tam": "string (with source or marked estimate)", "growthTrend": "string", "keyDrivers": ["string"] },
   "competitiveAnalysis": [{ "name": "string", "type": "string", "strengths": ["string"], "weaknesses": ["string"], "differentiationOpportunity": "string" }],
   "technicalLandscape": { "recommendedStack": "string", "recommendedBlockchain": "string", "blockchainRationale": "string", "keyLibraries": ["string"], "knownRisks": ["string"], "architectureNotes": "string" },
   "teamAssessment": { "size": 1, "capability": "string", "timelineFeasibility": "string", "recommendedMvpScope": "string", "skillGaps": ["string"] },
   "redFlags": ["string"],
   "opportunities": ["string"],
+  "sources": [{ "claim": "string", "url": "string" }],
   "researchConfidence": "high",
-  "notesForWriter": "string"
+  "notesForWriter": "string (explicitly note which claims are sourced vs estimated)"
 }`;
 
 interface AnthropicStreamEvent {
@@ -30,6 +42,7 @@ interface AnthropicStreamEvent {
   message?: { usage?: { input_tokens: number; output_tokens: number } };
   delta?: { type?: string; text?: string; stop_reason?: string };
   usage?: { output_tokens: number };
+  content_block?: { type?: string };
   index?: number;
 }
 
@@ -67,7 +80,9 @@ Competitors: ${intakeData.competitors}
 Team: ${intakeData.teamInfo}
 Timeline: ${intakeData.timeline}
 Budget: ${intakeData.budget}
-Document Needs: ${intakeData.documentNeeds}`;
+Document Needs: ${intakeData.documentNeeds}
+
+Research this project. Use web search to verify market figures and competitor facts. Return the JSON brief with sources.`;
 
         const apiRes = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
@@ -78,9 +93,11 @@ Document Needs: ${intakeData.documentNeeds}`;
           },
           body: JSON.stringify({
             model: MODEL,
-            max_tokens: 5000,
+            max_tokens: 4500,
             system: SYSTEM_PROMPT,
             messages: [{ role: "user", content: userMessage }],
+            // Native Anthropic web search tool - returns sources automatically.
+            tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }],
             stream: true,
           }),
         });
@@ -90,13 +107,13 @@ Document Needs: ${intakeData.documentNeeds}`;
           throw new Error(`Anthropic API error: ${apiRes.status} ${errText}`);
         }
 
-        // Pipe Anthropic stream → our SSE stream
         const reader = apiRes.body.getReader();
         const decoder = new TextDecoder();
         let buf = "";
         let fullText = "";
         let inputTokens = 0;
         let outputTokens = 0;
+        let searching = false;
 
         while (true) {
           const { done, value } = await reader.read();
@@ -118,10 +135,17 @@ Document Needs: ${intakeData.documentNeeds}`;
                 inputTokens = event.message.usage.input_tokens;
               }
 
+              // Surface a "searching" signal so the UI shows progress during tool use.
+              if (event.type === "content_block_start" && event.content_block?.type === "server_tool_use") {
+                searching = true;
+                send({ type: "progress", searching: true });
+              }
+
+              // Only accumulate the model's TEXT output (the JSON brief), not the
+              // tool-use/result blocks.
               if (event.type === "content_block_delta" && event.delta?.type === "text_delta" && event.delta.text) {
                 fullText += event.delta.text;
-                // Forward progress so the connection stays alive
-                send({ type: "progress", len: fullText.length });
+                send({ type: "progress", len: fullText.length, searching });
               }
 
               if (event.type === "message_delta" && event.usage) {
@@ -131,34 +155,10 @@ Document Needs: ${intakeData.documentNeeds}`;
           }
         }
 
-        // Parse accumulated JSON
         const clean = fullText.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```\s*$/i, "").trim();
         let data;
         try { data = JSON.parse(clean); }
-        catch {
-          // Try to extract the JSON object and repair truncated output
-          const m = clean.match(/\{[\s\S]*/);
-          if (!m) throw new Error("No JSON object found in response");
-          let fragment = m[0];
-          try { data = JSON.parse(fragment); }
-          catch {
-            // Close any open structures left by token-limit truncation
-            fragment = fragment.replace(/,\s*$/, "");
-            let opens = 0;
-            let inStr = false, esc = false;
-            for (const c of fragment) {
-              if (esc) { esc = false; continue; }
-              if (c === "\\" && inStr) { esc = true; continue; }
-              if (c === '"') { inStr = !inStr; continue; }
-              if (!inStr) { if (c === "{" || c === "[") opens++; else if (c === "}" || c === "]") opens--; }
-            }
-            // If we're still inside a string, truncate to last safe '"'
-            if (inStr) { fragment = fragment.slice(0, fragment.lastIndexOf('"')); opens++; }
-            fragment += "}".repeat(Math.max(0, opens));
-            try { data = JSON.parse(fragment); }
-            catch { throw new Error("Failed to parse model response as JSON"); }
-          }
-        }
+        catch { const m = clean.match(/\{[\s\S]*\}/); if (m) data = JSON.parse(m[0]); else throw new Error("Failed to parse response"); }
 
         send({
           type: "done",
@@ -170,7 +170,7 @@ Document Needs: ${intakeData.documentNeeds}`;
             inputTokens,
             outputTokens,
             costUsd: (inputTokens / 1_000_000) * 3 + (outputTokens / 1_000_000) * 15,
-            toolCallsCount: 0,
+            toolCallsCount: searching ? 1 : 0,
           },
         });
       } catch (error) {

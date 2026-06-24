@@ -8,6 +8,7 @@ import {
   type WriterInput,
   type ReviseInput,
 } from "../../lib/agents/generate";
+import { generateCritic, type CriticInput } from "../../lib/agents/critic";
 
 const JOBS_TABLE = "as_generation_jobs";
 
@@ -73,11 +74,15 @@ export default async (req: Request) => {
     });
     if (runningErr) console.error("[bg] Failed to set running:", runningErr);
 
-    console.log("[bg] Starting generation...");
-    const result =
-      job.kind === "writer"
-        ? await generateWriter(apiKey, job.input as WriterInput)
-        : await generateRevise(apiKey, job.input as ReviseInput);
+    console.log("[bg] Starting generation, kind =", job.kind);
+    let result;
+    if (job.kind === "writer") {
+      result = await generateWriter(apiKey, job.input as WriterInput);
+    } else if (job.kind === "critic") {
+      result = await generateCritic(apiKey, job.input as CriticInput);
+    } else {
+      result = await generateRevise(apiKey, job.input as ReviseInput);
+    }
 
     console.log("[bg] Generation complete, writing result");
     const doneErr = await sbUpdate(supabaseUrl, serviceKey, JOBS_TABLE, jobId, {

@@ -125,6 +125,10 @@ Rules:
 - Fix every major issue — these reduce quality
 - Address minor issues where practical
 - Address EVERY item in the Checklist — these are mandatory requirements the document must satisfy
+- Apply EVERY item in the Critic Revision Brief, prioritising critical and high first
+- For each unsupported claim the Critic flagged: source it, soften it, or remove it — never leave an unsupported hard number
+- Resolve every contradiction the Critic identified
+- Replace risky wording (audit/guarantee/comprehensive/prevents) with the safer wording the Critic suggested
 - Same conciseness constraints as the original (2-3 blocks per section)
 - Output must be complete and valid JSON`;
 
@@ -272,12 +276,13 @@ export interface ReviseInput {
     humanChecklist: string[];
     summary: string;
   };
+  criticReport?: unknown; // Critic JSON (verdict, attacks, unsupportedClaims, contradictions, revisionBrief)
   intakeData?: Record<string, string>;
   documentType?: string;
 }
 
 export async function generateRevise(apiKey: string, input: ReviseInput): Promise<GenerationResult> {
-  const { techSpec, qaReport, intakeData, documentType } = input;
+  const { techSpec, qaReport, criticReport, intakeData, documentType } = input;
   const startTime = Date.now();
 
   const issuesList = [
@@ -297,6 +302,9 @@ ${issuesList || "No issues — minor polish only"}
 CHECKLIST (every item below MUST be addressed in the revised document):
 ${qaReport.humanChecklist.join("\n")}
 
+${criticReport ? `CRITIC REVIEW (adversarial - treat the revisionBrief as mandatory):
+${JSON.stringify(criticReport, null, 2)}
+` : ""}
 ${intakeData ? `PROJECT CONTEXT:\nBlockchain: ${intakeData.blockchain}\nBudget: ${intakeData.budget}\nTimeline: ${intakeData.timeline}\n` : ""}
 
 CURRENT TECH SPEC TO REVISE:
