@@ -3,10 +3,10 @@ import { NextRequest } from "next/server";
 export const runtime = "edge";
 export const maxDuration = 240;
 
-// Upgraded to Sonnet 4.6 + native web search (web_search_20260209 — GA, no beta header).
-// Research now GROUNDS market claims in real sources instead of generating plausible-sounding
-// numbers from memory. Every market-size / competitor / cost figure should carry a source URL
-// so the Writer cannot invent unsupported numbers (the root cause of "$50B+" with no cite).
+// Upgraded to Sonnet 4.6 + native web search. Research now GROUNDS market claims
+// in real sources instead of generating plausible-sounding numbers from memory.
+// Every market-size / competitor / cost figure should carry a source URL so the
+// Writer cannot invent unsupported numbers (the root cause of "$50B+" with no cite).
 const MODEL = "claude-sonnet-4-6";
 
 const SYSTEM_PROMPT = `You are a senior Web3 research analyst with web search. Analyze the client intake form and produce a research brief.
@@ -90,14 +90,15 @@ Research this project. Use web search to verify market figures and competitor fa
             "Content-Type": "application/json",
             "x-api-key": apiKey,
             "anthropic-version": "2023-06-01",
+            "anthropic-beta": "web-search-2025-03-05",
           },
           body: JSON.stringify({
             model: MODEL,
             max_tokens: 4500,
             system: SYSTEM_PROMPT,
             messages: [{ role: "user", content: userMessage }],
-            // GA web search tool (20260209) — dynamic filtering, no beta header required.
-            tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 5 }],
+            // Native Anthropic web search tool - returns sources automatically.
+            tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }],
             stream: true,
           }),
         });
@@ -155,7 +156,7 @@ Research this project. Use web search to verify market figures and competitor fa
           }
         }
 
-        if (!fullText) throw new Error("Research returned no text — check web search tool type or model timeout");
+        if (!fullText) throw new Error("Research returned no text — web search beta header may be missing or the model timed out");
         const clean = fullText.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```\s*$/i, "").trim();
         let data;
         try { data = JSON.parse(clean); }
