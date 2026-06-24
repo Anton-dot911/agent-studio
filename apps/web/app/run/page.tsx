@@ -87,6 +87,7 @@ export default function RunPage() {
   const [researchResult, setResearchResult] = useState<Record<string, unknown> | null>(null);
   const [spec, setSpec] = useState<TechSpec | null>(null);
   const [qaReport, setQaReport] = useState<QAReport | null>(null);
+  const [criticReport, setCriticReport] = useState<Record<string, unknown> | null>(null);
   const [clientEmail, setClientEmail] = useState("");
   const [clientName, setClientName] = useState("");
   const [deliveryResult, setDeliveryResult] = useState<{ pdfGenerated: boolean; emailSent: boolean } | null>(null);
@@ -154,7 +155,7 @@ export default function RunPage() {
   // so they can produce a full-quality document without hitting the request timeout.
   // We start the job, then poll its status in Supabase until it finishes.
   const runJob = async (
-    kind: "writer" | "revise",
+    kind: "writer" | "revise" | "critic",
     input: object,
     paymentTxHash?: string
   ): Promise<{ data: Record<string, unknown>; meta: Record<string, unknown> }> => {
@@ -194,7 +195,7 @@ export default function RunPage() {
   // ── Step 1: Research ───────────────────────────────────────────────────────
   const runResearch = async () => {
     if (!form.projectName) { setError("Enter a project name to continue"); return; }
-    setStatus("running"); setResearchResult(null); setSpec(null); setQaReport(null); setError(""); setMeta(null); setWasRevised(false); setIsPaid(false);
+    setStatus("running"); setResearchResult(null); setSpec(null); setQaReport(null); setCriticReport(null); setError(""); setMeta(null); setWasRevised(false); setIsPaid(false);
     const timer = startTimer(s => setElapsed(s));
     try {
       const { data, meta } = await fetchSSE("/api/agents/research", { projectId: "p_" + Date.now(), intakeData: form });
@@ -232,9 +233,29 @@ export default function RunPage() {
     setStatus("qa_checking"); setError("");
     const timer = startTimer(s => setElapsed(s));
     try {
-      const { data, meta } = await fetchSSE("/api/agents/qa", { techSpec: spec, researchReport: researchResult, documentType: form.documentNeeds });
+      // QA (edge SSE) and Critic (background job) run in parallel - two
+      // independent reviewers. QA checks quality/requirements; Critic attacks
+      // the document the way a skeptical investor/CTO/client would.
+      const qaPromise = fetchSSE("/api/agents/qa", { techSpec: spec, researchReport: researchResult, documentType: form.documentNeeds });
+      const criticPromise = runJob("critic", {
+        techSpec: spec,
+        researchReport: researchResult,
+        intakeData: form,
+        documentType: form.documentNeeds,
+        targetAudience: form.targetAudience,
+      }).catch((e) => {
+        // Critic is additive - if it fails, QA still drives the flow.
+        console.error("Critic failed:", e);
+        return null;
+      });
+
+      const [{ data, meta }, criticOut] = await Promise.all([qaPromise, criticPromise]);
       timer.stop();
+
       setQaReport(data as unknown as QAReport);
+      if (criticOut && criticOut.data) {
+        setCriticReport(criticOut.data as Record<string, unknown>);
+      }
       setMeta({ costUsd: (meta.costUsd as number) ?? 0, tokens: ((meta.inputTokens as number) ?? 0) + ((meta.outputTokens as number) ?? 0) });
       setStatus("qa_done");
     } catch (e) {
@@ -249,7 +270,7 @@ export default function RunPage() {
     setStatus("revising"); setError("");
     const timer = startTimer(s => setElapsed(s));
     try {
-      const { data, meta } = await runJob("revise", { techSpec: spec, qaReport, intakeData: form, documentType: form.documentNeeds });
+      const { data, meta } = await runJob("revise", { techSpec: spec, qaReport, criticReport, intakeData: form, documentType: form.documentNeeds });
       timer.stop();
       setSpec(data as unknown as TechSpec);
       setQaReport(null);
