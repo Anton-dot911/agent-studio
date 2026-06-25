@@ -16,6 +16,8 @@ before stating it. Every quantitative market claim MUST include a source URL in 
 estimate and mark it as unverified - never present an unverified number as fact.
 
 Respond with ONLY a valid JSON object. No markdown, no code fences. Start with { and end with }.
+Keep the "sources" array to a maximum of 5 entries — include only the most important citations.
+Keep all string values concise; do not write paragraphs where a sentence will do.
 
 Focus on what matters MOST for the requested document type:
 - Tech Spec: technical architecture, stack choices, integration patterns
@@ -77,10 +79,10 @@ Research this project. Use web search to verify market figures and competitor fa
     },
     body: JSON.stringify({
       model: RESEARCH_MODEL,
-      max_tokens: 8000,
+      max_tokens: 8192,
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: userMessage }],
-      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }],
+      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 3 }],
     }),
     signal: abort.signal,
   }).finally(() => clearTimeout(timeoutId));
@@ -108,29 +110,34 @@ Research this project. Use web search to verify market figures and competitor fa
   try {
     data = JSON.parse(clean);
   } catch {
-    // Repair JSON truncated by max_tokens: close any open braces/brackets cut off mid-output.
-    const m = clean.match(/\{[\s\S]*/);
-    if (!m) throw new Error("Failed to parse research response as JSON");
-    let fragment = m[0].replace(/,\s*$/, "");
+    // Attempt to recover a truncated JSON response (e.g. max_tokens cut-off mid-value).
+    // Extract the largest {...} fragment, then close any unclosed brackets/braces in order.
+    const start = clean.indexOf("{");
+    if (start === -1) throw new Error("Failed to parse research response as JSON");
+    let fragment = clean.slice(start);
+
+    // Walk the fragment tracking open brackets so we can close them correctly.
+    const stack: string[] = [];
+    let inStr = false;
+    let esc = false;
+    for (const c of fragment) {
+      if (esc) { esc = false; continue; }
+      if (c === "\\" && inStr) { esc = true; continue; }
+      if (c === '"') { inStr = !inStr; continue; }
+      if (!inStr) {
+        if (c === "{") stack.push("}");
+        else if (c === "[") stack.push("]");
+        else if (c === "}" || c === "]") stack.pop();
+      }
+    }
+    // If we ended mid-string, close it first.
+    if (inStr) fragment += '"';
+    fragment += stack.reverse().join("");
+
     try {
       data = JSON.parse(fragment);
     } catch {
-      let opens = 0;
-      let inStr = false;
-      let esc = false;
-      for (const c of fragment) {
-        if (esc) { esc = false; continue; }
-        if (c === "\\" && inStr) { esc = true; continue; }
-        if (c === '"') { inStr = !inStr; continue; }
-        if (!inStr) {
-          if (c === "{" || c === "[") opens++;
-          else if (c === "}" || c === "]") opens--;
-        }
-      }
-      if (inStr) { fragment = fragment.slice(0, fragment.lastIndexOf('"')); opens++; }
-      fragment += "}".repeat(Math.max(0, opens));
-      try { data = JSON.parse(fragment); }
-      catch { throw new Error("Failed to parse research response as JSON"); }
+      throw new Error("Failed to parse research response as JSON");
     }
   }
 
