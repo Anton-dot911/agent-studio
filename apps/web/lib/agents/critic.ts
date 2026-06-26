@@ -155,22 +155,17 @@ export interface CriticResult {
   meta: CriticMeta;
 }
 
+import { parseJsonLoose } from "./json-repair";
+
 interface AnthropicResponse {
   content?: { type: string; text?: string }[];
   usage?: { input_tokens: number; output_tokens: number };
 }
 
 function parseJson(raw: string): unknown {
-  const clean = raw
-    .replace(/^```json\s*/i, "")
-    .replace(/^```\s*/i, "")
-    .replace(/\s*```\s*$/i, "")
-    .trim();
   try {
-    return JSON.parse(clean);
+    return parseJsonLoose(raw);
   } catch {
-    const m = clean.match(/\{[\s\S]*\}/);
-    if (m) return JSON.parse(m[0]);
     throw new Error("Failed to parse critic response as JSON");
   }
 }
@@ -204,7 +199,7 @@ Produce your structured critique now as the JSON object.`;
     },
     body: JSON.stringify({
       model: CRITIC_MODEL,
-      max_tokens: 8000,
+      max_tokens: 12000,
       system: CRITIC_PROMPT,
       messages: [{ role: "user", content: userMessage }],
     }),

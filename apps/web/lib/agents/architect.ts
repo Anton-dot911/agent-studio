@@ -103,39 +103,18 @@ export interface ArchitectResult {
   };
 }
 
+import { parseJsonLoose } from "./json-repair";
+
 interface AnthropicResponse {
   content?: { type: string; text?: string }[];
   usage?: { input_tokens: number; output_tokens: number };
 }
 
 function parseJson(raw: string): unknown {
-  const clean = raw
-    .replace(/^```json\s*/i, "")
-    .replace(/^```\s*/i, "")
-    .replace(/\s*```\s*$/i, "")
-    .trim();
   try {
-    return JSON.parse(clean);
+    return parseJsonLoose(raw);
   } catch {
-    const start = clean.indexOf("{");
-    if (start === -1) throw new Error("Failed to parse architect response as JSON");
-    let fragment = clean.slice(start);
-    const stack: string[] = [];
-    let inStr = false;
-    let esc = false;
-    for (const c of fragment) {
-      if (esc) { esc = false; continue; }
-      if (c === "\\" && inStr) { esc = true; continue; }
-      if (c === '"') { inStr = !inStr; continue; }
-      if (!inStr) {
-        if (c === "{") stack.push("}");
-        else if (c === "[") stack.push("]");
-        else if (c === "}" || c === "]") stack.pop();
-      }
-    }
-    if (inStr) fragment += '"';
-    fragment += stack.reverse().join("");
-    return JSON.parse(fragment);
+    throw new Error("Failed to parse architect response as JSON");
   }
 }
 
@@ -169,7 +148,7 @@ Produce your structured build-readiness review now as the JSON object.`;
     },
     body: JSON.stringify({
       model: ARCHITECT_MODEL,
-      max_tokens: 8000,
+      max_tokens: 12000,
       system: ARCHITECT_PROMPT,
       messages: [{ role: "user", content: userMessage }],
     }),

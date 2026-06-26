@@ -7,6 +7,8 @@
 // These calls are NON-streaming: the background worker only needs the final JSON, and
 // the client tracks progress by polling the job status in Supabase.
 
+import { parseJsonLoose } from "./json-repair";
+
 // Writer and Reviser both run on Sonnet 4.6 (same model that does QA) for quality.
 export const GENERATION_MODEL = "claude-sonnet-4-6";
 
@@ -163,7 +165,10 @@ async function callAnthropic(
   apiKey: string,
   system: string,
   userMessage: string,
-  maxTokens = 8000,
+  // 16000 gives the Writer/Reviser room for a complete 10-section document. The
+  // Reviser's input grew with the DCL context package + Critic + Architect reports,
+  // so its revised output can run past the old 8000 cap and truncate mid-JSON.
+  maxTokens = 16000,
 ): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
   const abort = new AbortController();
   const timeoutId = setTimeout(() => abort.abort(), 10 * 60 * 1000); // 10 min hard limit
@@ -203,16 +208,9 @@ async function callAnthropic(
 }
 
 function parseJsonDocument(raw: string): unknown {
-  const clean = raw
-    .replace(/^```json\s*/i, "")
-    .replace(/^```\s*/i, "")
-    .replace(/\s*```\s*$/i, "")
-    .trim();
   try {
-    return JSON.parse(clean);
+    return parseJsonLoose(raw);
   } catch {
-    const m = clean.match(/\{[\s\S]*\}/);
-    if (m) return JSON.parse(m[0]);
     throw new Error("Failed to parse model response as JSON");
   }
 }
