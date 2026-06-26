@@ -126,6 +126,7 @@ Rules:
 - Address minor issues where practical
 - Address EVERY item in the Checklist — these are mandatory requirements the document must satisfy
 - Apply EVERY item in the Critic Revision Brief, prioritising critical and high first
+- Apply EVERY item in the Implementation Architect Revision Brief and close every build-readiness gap it lists — add the concrete API contracts, data schema, state flow, deployment, testing, or edge-case detail it identifies as missing
 - For each unsupported claim the Critic flagged: source it, soften it, or remove it — never leave an unsupported hard number
 - Resolve every contradiction the Critic identified
 - Replace risky wording (audit/guarantee/comprehensive/prevents) with the safer wording the Critic suggested
@@ -224,14 +225,17 @@ export interface WriterInput {
   intakeData: Record<string, string>;
   researchReport: unknown;
   checklistItems?: string[];
+  // DCL: validated, role-specific context package rendered as a prompt section.
+  // Optional and additive — when absent the prompt is identical to pre-DCL behaviour.
+  contextPackage?: string;
 }
 
 export async function generateWriter(apiKey: string, input: WriterInput): Promise<GenerationResult> {
-  const { intakeData, researchReport, checklistItems } = input;
+  const { intakeData, researchReport, checklistItems, contextPackage } = input;
   const startTime = Date.now();
   const system = getWriterSystemPrompt(intakeData.documentNeeds ?? "tech spec");
 
-  const userMessage = `INTAKE DATA:
+  const userMessage = `${contextPackage ? `${contextPackage}\n\n` : ""}INTAKE DATA:
 Project: ${intakeData.projectName}
 Concept: ${intakeData.concept}
 Problem: ${intakeData.problem}
@@ -277,12 +281,15 @@ export interface ReviseInput {
     summary: string;
   };
   criticReport?: unknown; // Critic JSON (verdict, attacks, unsupportedClaims, contradictions, revisionBrief)
+  architectReport?: unknown; // Implementation Architect JSON (verdict, gaps, revisionBrief)
   intakeData?: Record<string, string>;
   documentType?: string;
+  // DCL: validated, role-specific context package rendered as a prompt section.
+  contextPackage?: string;
 }
 
 export async function generateRevise(apiKey: string, input: ReviseInput): Promise<GenerationResult> {
-  const { techSpec, qaReport, criticReport, intakeData, documentType } = input;
+  const { techSpec, qaReport, criticReport, architectReport, intakeData, documentType, contextPackage } = input;
   const startTime = Date.now();
 
   const issuesList = [
@@ -291,7 +298,7 @@ export async function generateRevise(apiKey: string, input: ReviseInput): Promis
     ...qaReport.minorIssues.map((i) => `[MINOR] ${i}`),
   ].join("\n");
 
-  const userMessage = `DOCUMENT TYPE: ${documentType ?? intakeData?.documentNeeds ?? "Tech Spec"}
+  const userMessage = `${contextPackage ? `${contextPackage}\n\n` : ""}DOCUMENT TYPE: ${documentType ?? intakeData?.documentNeeds ?? "Tech Spec"}
 
 QA REPORT SUMMARY:
 ${qaReport.summary}
@@ -304,6 +311,9 @@ ${qaReport.humanChecklist.join("\n")}
 
 ${criticReport ? `CRITIC REVIEW (adversarial - treat the revisionBrief as mandatory):
 ${JSON.stringify(criticReport, null, 2)}
+` : ""}
+${architectReport ? `IMPLEMENTATION ARCHITECT REVIEW (build-readiness - treat the revisionBrief and gaps as mandatory; add the missing implementation detail it identifies):
+${JSON.stringify(architectReport, null, 2)}
 ` : ""}
 ${intakeData ? `PROJECT CONTEXT:\nBlockchain: ${intakeData.blockchain}\nBudget: ${intakeData.budget}\nTimeline: ${intakeData.timeline}\n` : ""}
 

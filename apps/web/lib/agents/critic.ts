@@ -138,6 +138,8 @@ export interface CriticInput {
   documentType?: string;
   targetAudience?: string;
   qualityStandard?: string;
+  // DCL: validated, role-specific context package rendered as a prompt section.
+  contextPackage?: string;
 }
 
 export interface CriticMeta {
@@ -174,10 +176,10 @@ function parseJson(raw: string): unknown {
 }
 
 export async function generateCritic(apiKey: string, input: CriticInput): Promise<CriticResult> {
-  const { techSpec, researchReport, intakeData, documentType, targetAudience, qualityStandard } = input;
+  const { techSpec, researchReport, intakeData, documentType, targetAudience, qualityStandard, contextPackage } = input;
   const startTime = Date.now();
 
-  const userMessage = `DOCUMENT_TYPE: ${documentType ?? intakeData?.documentNeeds ?? "Technical Specification"}
+  const userMessage = `${contextPackage ? `${contextPackage}\n\n` : ""}DOCUMENT_TYPE: ${documentType ?? intakeData?.documentNeeds ?? "Technical Specification"}
 TARGET_AUDIENCE: ${targetAudience ?? intakeData?.targetAudience ?? "investors, technical buyers, enterprise decision-makers"}
 INTENDED_USE: client proposal / investor review / developer handoff
 QUALITY_STANDARD: ${qualityStandard ?? "investor-ready"}
