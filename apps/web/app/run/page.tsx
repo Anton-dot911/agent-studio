@@ -56,19 +56,42 @@ const INIT: Record<string, string> = {
   timeline: "", budget: "", documentNeeds: "Tech Spec",
 };
 
-const TEST_DATA: Record<string, string> = {
-  projectName: "ProofFlow AI",
-  concept: "ProofFlow AI is an AI-powered verification platform for Web3 teams that automatically reviews project documentation, smart contract architecture, tokenomics assumptions, and public claims before launch. The system compares whitepapers, GitHub repositories, contract ABIs, token distribution data, and website content to detect inconsistencies, missing security details, unrealistic promises, and potential investor-risk signals. It generates a structured technical risk report for founders, auditors, launchpads, and early investors.",
-  problem: "Web3 projects often publish incomplete or inconsistent technical documentation before launch. Investors, auditors, and launchpads waste time manually checking claims, tokenomics, contract structure, and security readiness. There is no simple automated pre-audit layer that detects documentation gaps, technical contradictions, and launch risks before expensive manual review.",
-  targetAudience: "Web3 startup founders, smart contract auditors, launchpads, venture analysts, DAO contributors, token investors, and accelerator programs that review early-stage blockchain projects.",
-  blockchain: "Ethereum, Base, Arbitrum, Polygon, or N/A",
-  existingCode: "None",
-  competitors: "CertiK Skynet, Token Sniffer, De.Fi Scanner, RugDoc, SolidityScan, GoPlus Security, Dune dashboards, manual audit firms",
-  teamInfo: "2 full-stack developers, 1 AI/LLM engineer, 1 smart contract/security specialist, 1 product designer",
-  timeline: "MVP 10 weeks",
-  budget: "$40k-70k",
-  documentNeeds: "Tech Spec",
-};
+const PRESETS: { label: string; data: Record<string, string> }[] = [
+  {
+    label: "ProofFlow AI",
+    data: {
+      projectName: "ProofFlow AI",
+      concept: "ProofFlow AI is an AI-powered verification platform for Web3 teams that automatically reviews project documentation, smart contract architecture, tokenomics assumptions, and public claims before launch. The system compares whitepapers, GitHub repositories, contract ABIs, token distribution data, and website content to detect inconsistencies, missing security details, unrealistic promises, and potential investor-risk signals. It generates a structured technical risk report for founders, auditors, launchpads, and early investors.",
+      problem: "Web3 projects often publish incomplete or inconsistent technical documentation before launch. Investors, auditors, and launchpads waste time manually checking claims, tokenomics, contract structure, and security readiness. There is no simple automated pre-audit layer that detects documentation gaps, technical contradictions, and launch risks before expensive manual review.",
+      targetAudience: "Web3 startup founders, smart contract auditors, launchpads, venture analysts, DAO contributors, token investors, and accelerator programs that review early-stage blockchain projects.",
+      blockchain: "Ethereum, Base, Arbitrum, Polygon, or N/A",
+      existingCode: "None",
+      competitors: "CertiK Skynet, Token Sniffer, De.Fi Scanner, RugDoc, SolidityScan, GoPlus Security, Dune dashboards, manual audit firms",
+      teamInfo: "2 full-stack developers, 1 AI/LLM engineer, 1 smart contract/security specialist, 1 product designer",
+      timeline: "MVP 10 weeks",
+      budget: "$40k-70k",
+      documentNeeds: "Tech Spec",
+    },
+  },
+  {
+    label: "AgentOps TrustLayer",
+    data: {
+      projectName: "AgentOps TrustLayer",
+      concept: "AgentOps TrustLayer is a control, monitoring, and compliance platform for companies deploying AI agents in real business workflows. It provides permission management, tool access policies, budget limits, human approvals, action logs, risk scoring, rollback workflows, and compliance reports for every AI agent action. The system allows companies to safely connect AI agents to Gmail, Slack, CRMs, databases, APIs, payment systems, and internal tools without giving them uncontrolled access. It works as a security and governance layer between AI agents and external systems.",
+      problem: "Companies want to use AI agents to automate real work, but they cannot safely allow autonomous systems to access sensitive data, send emails, execute payments, modify databases, or trigger business workflows without control. The main problems are lack of visibility, weak permissions, no audit trail, unclear responsibility, prompt injection risks, data leaks, and compliance pressure. Businesses need a practical AgentOps layer before they can deploy AI agents at scale.",
+      targetAudience: "Enterprise SaaS companies, AI automation agencies, internal IT teams, compliance teams, fintech companies, legal-tech platforms, healthcare software vendors, CRM providers, Web3 teams, and startups building AI agent products.",
+      blockchain: "N/A, optional Base or Ethereum for tamper-proof audit logs and payment verification",
+      existingCode: "None",
+      competitors: "LangSmith, Langfuse, OpenAI Evals, Humanloop, Credo AI, Lakera, Prompt Security, WorkOS, Auth0, Vanta, Drata, traditional SIEM tools",
+      teamInfo: "2 full-stack developers, 1 AI/LLM engineer, 1 security engineer, 1 product/UX designer",
+      timeline: "MVP 10 weeks",
+      budget: "$50k-90k",
+      documentNeeds: "Tech Spec",
+    },
+  },
+];
+
+const TEST_DATA = PRESETS[0].data;
 
 const DOC_TYPES = [
   { value: "Tech Spec", label: "Tech Spec", desc: "Architecture, contracts, API, deployment" },
@@ -578,7 +601,14 @@ export default function RunPage() {
         <div>
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
             <h2 style={{ fontSize: 25, fontWeight: 800, color: "var(--bright)", letterSpacing: "-0.3px" }}>Intake form</h2>
-            <button onClick={() => setForm(TEST_DATA)} style={{ fontSize: 11, padding: "5px 14px", borderRadius: 50, background: "var(--card)", boxShadow: "var(--shadow-sm)", color: "var(--dim)", border: "1.5px solid rgba(15,18,64,0.10)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, whiteSpace: "nowrap" }}>Load test data</button>
+            <select
+              onChange={e => { const p = PRESETS.find(x => x.label === e.target.value); if (p) setForm(p.data); e.target.value = ""; }}
+              defaultValue=""
+              style={{ fontSize: 11, padding: "5px 14px", borderRadius: 50, background: "var(--card)", boxShadow: "var(--shadow-sm)", color: "var(--dim)", border: "1.5px solid rgba(15,18,64,0.10)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, appearance: "none", WebkitAppearance: "none" }}
+            >
+              <option value="" disabled>Load example</option>
+              {PRESETS.map(p => <option key={p.label} value={p.label}>{p.label}</option>)}
+            </select>
           </div>
           <p style={{ fontSize: 14, color: "var(--dim)", marginBottom: 26, lineHeight: 1.6 }}>Fill the fields below. The agent returns its analysis in about 45 seconds.</p>
           <div style={{ display: "flex", flexDirection: "column", gap: 18, marginBottom: 24 }}>
