@@ -447,6 +447,9 @@ export default function RunPage() {
             .doc-page { background: #ffffff; border-radius: 10px; box-shadow: var(--nm-out); overflow: hidden; color: #1a1a2e; }
           }
           @media print {
+            /* Only the document itself prints — every other card/panel/toolbar in
+               the workspace is suppressed, so no app chrome can leak into the PDF. */
+            .doc-wrap > :not(.doc-page) { display: none !important; }
             .doc-bar,.qa-panel,.delivery-panel,.dcl-panel { display: none !important; }
             .doc-wrap { max-width: none; margin: 0; padding: 0; }
             .doc-page { box-shadow: none; border-radius: 0; overflow: visible; }
