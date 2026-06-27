@@ -321,10 +321,11 @@ export default function RunPage() {
       //   Critic (background job)  — adversarial credibility attack
       //   Implementation Architect — build-readiness (DCL-gated; new agent)
       // Each reviewer additive: if one fails, the others still drive the flow.
+      const qaPackage = packageFor("qa", contextItems);
       const criticPackage = packageFor("critic", contextItems);
       const architectPackage = packageFor("implementation_architect", contextItems);
 
-      const qaPromise = fetchSSE("/api/agents/qa", { techSpec: spec, researchReport: researchResult, documentType: form.documentNeeds });
+      const qaPromise = fetchSSE("/api/agents/qa", { techSpec: spec, researchReport: researchResult, documentType: form.documentNeeds, contextPackage: qaPackage });
       const criticPromise = runJob("critic", {
         techSpec: spec,
         researchReport: researchResult,

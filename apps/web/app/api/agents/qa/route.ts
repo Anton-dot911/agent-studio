@@ -92,10 +92,11 @@ interface AnthropicStreamEvent {
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { techSpec, researchReport, documentType } = body as {
+  const { techSpec, researchReport, documentType, contextPackage } = body as {
     techSpec: { title: string };
     researchReport: unknown;
     documentType?: string;
+    contextPackage?: string;
   };
 
   if (!techSpec?.title || !researchReport) {
@@ -118,7 +119,7 @@ export async function POST(req: NextRequest) {
       try {
         const startTime = Date.now();
 
-        const userMessage = `DOCUMENT TO REVIEW:
+        const userMessage = `${contextPackage ? `${contextPackage}\n\n` : ""}DOCUMENT TO REVIEW:
 ${JSON.stringify(techSpec, null, 2)}
 
 ORIGINAL RESEARCH REPORT (for fact-checking):
