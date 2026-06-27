@@ -122,6 +122,7 @@ export default function RunPage() {
   const [meta, setMeta] = useState<{ costUsd: number; tokens: number } | null>(null);
   const [wasRevised, setWasRevised] = useState(false);
   const [isPaid, setIsPaid] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   // ── Dynamic Context Layer (in-session) ───────────────────────────────────────
   const [contextItems, setContextItems] = useState<ContextItem[]>([]);
   const [architectReport, setArchitectReport] = useState<Record<string, unknown> | null>(null);
@@ -402,6 +403,38 @@ export default function RunPage() {
     }
   };
 
+  // Download the AntLab-styled PDF from the deliver route (server-side PDFShift
+  // render). This replaces window.print() so the file is the branded document only —
+  // never the browser preview / app chrome.
+  const downloadPdf = async () => {
+    if (!spec) return;
+    setDownloading(true); setError("");
+    try {
+      const res = await fetch("/api/agents/deliver", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ techSpec: spec, projectName: form.projectName, returnPdf: true }),
+      });
+      if (!res.ok) {
+        const t = await res.text();
+        throw new Error("PDF generation failed: " + t.slice(0, 160));
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${form.projectName.replace(/\s+/g, "-")}-AntLab-tech-spec.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "PDF download failed.");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   // ── Step 4: Deliver ────────────────────────────────────────────────────────
   const runDeliver = async () => {
     if (!clientEmail) { setError("Enter client email to deliver"); return; }
@@ -488,7 +521,7 @@ export default function RunPage() {
           <div className="doc-bar">
             <button onClick={() => setStatus("done")} style={{ fontSize: 13, padding: "9px 20px", borderRadius: 50, background: "var(--card)", boxShadow: "var(--shadow-sm)", color: "var(--text)", border: "1.5px solid rgba(15,18,64,0.10)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>← Back</button>
             {canDownloadPdf && (
-              <button onClick={() => window.print()} style={{ fontSize: 13, padding: "9px 22px", borderRadius: 50, background: "var(--accent)", color: "#fff", boxShadow: "0 4px 14px rgba(33,37,102,0.28)", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>Download PDF</button>
+              <button onClick={downloadPdf} disabled={downloading} style={{ fontSize: 13, padding: "9px 22px", borderRadius: 50, background: "var(--accent)", color: "#fff", boxShadow: "0 4px 14px rgba(33,37,102,0.28)", border: "none", cursor: downloading ? "default" : "pointer", fontFamily: "inherit", fontWeight: 700 }}>{downloading ? "Generating PDF…" : "Download PDF"}</button>
             )}
 
             {showQABar && (
@@ -565,8 +598,8 @@ export default function RunPage() {
 
               {/* score >= 9: ready, show Download PDF */}
               {qaReport.score >= 9 && (
-                <button onClick={() => window.print()} style={{ width: "100%", padding: "14px 18px", borderRadius: 50, background: "var(--green)", color: "#fff", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 14, boxShadow: "0 4px 16px rgba(16,185,129,0.30)", marginBottom: 14 }}>
-                  Download PDF
+                <button onClick={downloadPdf} disabled={downloading} style={{ width: "100%", padding: "14px 18px", borderRadius: 50, background: "var(--green)", color: "#fff", border: "none", cursor: downloading ? "default" : "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 14, boxShadow: "0 4px 16px rgba(16,185,129,0.30)", marginBottom: 14 }}>
+                  {downloading ? "Generating PDF…" : "Download PDF"}
                 </button>
               )}
 
@@ -662,8 +695,8 @@ export default function RunPage() {
                   <p style={{ fontSize: 12, color: "var(--dim)" }}>Всі пункти Checklist враховані. Готово до завантаження.</p>
                 </div>
               </div>
-              <button onClick={() => window.print()} style={{ padding: "12px 28px", borderRadius: 50, background: "var(--accent)", color: "#fff", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 14, boxShadow: "0 4px 16px rgba(33,37,102,0.28)", whiteSpace: "nowrap" }}>
-                Download PDF
+              <button onClick={downloadPdf} disabled={downloading} style={{ padding: "12px 28px", borderRadius: 50, background: "var(--accent)", color: "#fff", border: "none", cursor: downloading ? "default" : "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 14, boxShadow: "0 4px 16px rgba(33,37,102,0.28)", whiteSpace: "nowrap" }}>
+                {downloading ? "Generating PDF…" : "Download PDF"}
               </button>
             </div>
           )}
