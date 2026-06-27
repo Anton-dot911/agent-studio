@@ -447,11 +447,13 @@ export default function RunPage() {
             .doc-page { background: #ffffff; border-radius: 10px; box-shadow: var(--nm-out); overflow: hidden; color: #1a1a2e; }
           }
           @media print {
-            .doc-bar,.qa-panel,.delivery-panel { display: none !important; }
+            .doc-bar,.qa-panel,.delivery-panel,.dcl-panel { display: none !important; }
             .doc-wrap { max-width: none; margin: 0; padding: 0; }
-            .doc-page { box-shadow: none; border-radius: 0; }
+            .doc-page { box-shadow: none; border-radius: 0; overflow: visible; }
             body { background: #fff !important; }
             .sec { break-inside: avoid; }
+            table.spec, table.spec tr, .hl, pre.code { break-inside: avoid; }
+            .body { padding-bottom: 28px; }
           }
           .doc-page * { font-family: 'Helvetica Neue', Arial, sans-serif; }
           .cover { background: #0055b3; color: #fff; padding: 56px 44px; }
@@ -469,9 +471,9 @@ export default function RunPage() {
           .hl { background: #eef4fc; border-left: 4px solid #0055b3; border-radius: 4px; padding: 14px 16px; margin-bottom: 14px; }
           .hl .hl-label { font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: #0055b3; font-weight: 700; margin-bottom: 6px; }
           .hl .hl-text { font-size: 13.5px; line-height: 1.6; color: #1a2a44; }
-          table.spec { width: 100%; border-collapse: collapse; margin-bottom: 14px; font-size: 12.5px; }
-          table.spec th { background: #0055b3; color: #fff; text-align: left; padding: 9px 12px; font-weight: 600; }
-          table.spec td { padding: 9px 12px; border-bottom: 1px solid #e3e8f0; color: #2a2a3a; }
+          table.spec { width: 100%; border-collapse: collapse; margin-bottom: 14px; font-size: 12.5px; table-layout: fixed; }
+          table.spec th { background: #0055b3; color: #fff; text-align: left; padding: 9px 12px; font-weight: 600; word-break: break-word; overflow-wrap: anywhere; vertical-align: top; }
+          table.spec td { padding: 9px 12px; border-bottom: 1px solid #e3e8f0; color: #2a2a3a; word-break: break-word; overflow-wrap: anywhere; white-space: normal; vertical-align: top; }
           table.spec tr:nth-child(even) td { background: #f6f9fd; }
           pre.code { background: #0d1530; color: #c8d4f0; padding: 14px 16px; border-radius: 6px; font-size: 12px; line-height: 1.6; overflow-x: auto; margin-bottom: 14px; font-family: 'Courier New', monospace !important; white-space: pre-wrap; }
           .foot { padding: 20px 44px; border-top: 1px solid #e3e8f0; font-size: 11px; color: #8a93a8; }
@@ -644,7 +646,7 @@ export default function RunPage() {
 
           {/* DCL: context layer feeding the Reviser */}
           {showQAResult && (
-            <DclPanel items={contextItems} onSetStatus={setItemStatus} card={card} title="Dynamic Context — feeding the Reviser" />
+            <DclPanel items={contextItems} onSetStatus={setItemStatus} card={card} title="Dynamic Context — feeding the Reviser" form={form} previewRoles={["revise"]} />
           )}
 
           {/* Post-revision success card */}
@@ -814,7 +816,7 @@ export default function RunPage() {
 
           {error && <div style={{ ...card, padding: "14px 16px", marginBottom: 16, color: "#c83838", fontSize: 13 }}>{error}</div>}
 
-          <DclPanel items={contextItems} onSetStatus={setItemStatus} card={card} title="Dynamic Context — after Research" />
+          <DclPanel items={contextItems} onSetStatus={setItemStatus} card={card} title="Dynamic Context — after Research" form={form} previewRoles={["writer"]} />
 
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             {Object.entries(researchResult).map(([key, val]) => {
@@ -880,13 +882,18 @@ function DclPanel({
   onSetStatus,
   card,
   title,
+  form,
+  previewRoles = [],
 }: {
   items: ContextItem[];
   onSetStatus: (id: string, status: ContextStatus) => void;
   card: React.CSSProperties;
   title: string;
+  form?: Record<string, string>;
+  previewRoles?: AgentRole[];
 }) {
   const [open, setOpen] = useState(true);
+  const [showDebug, setShowDebug] = useState(false);
   if (!ENABLE_DCL || items.length === 0) return null;
 
   const visible = items.filter(i => i.status !== "archived");
@@ -929,8 +936,16 @@ function DclPanel({
     );
   };
 
+  // Internal debug: the EXACT context-package text injected into each upcoming
+  // agent prompt. Rendered with the real builder, behind a toggle, and the whole
+  // panel carries class "dcl-panel" so it is excluded from the client PDF (print).
+  const debugRoles = previewRoles.filter(Boolean);
+  const packagesByRole = form
+    ? debugRoles.map(r => ({ role: r, text: buildAndRender(baseContextFromIntake(form), items, r) }))
+    : [];
+
   return (
-    <div style={{ ...card, padding: "16px 18px", marginBottom: 16, border: "1.5px solid rgba(109,40,217,0.18)" }}>
+    <div className="dcl-panel" style={{ ...card, padding: "16px 18px", marginBottom: 16, border: "1.5px solid rgba(109,40,217,0.18)" }}>
       <button onClick={() => setOpen(o => !o)} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", padding: 0 }}>
         <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#6d28d9" }} />
@@ -941,11 +956,25 @@ function DclPanel({
       {open && (
         <div style={{ marginTop: 14 }}>
           <p style={{ fontSize: 11, color: "var(--dim)", lineHeight: 1.5, marginBottom: 12 }}>
-            Validated context passed forward to the next agents. High-impact items are flagged for review (never treated as fact); low-risk operational items are auto-accepted.
+            Validated context passed forward to the next agents. High-impact items are flagged for review (never treated as fact); low-risk operational items are auto-accepted. This panel is internal — it is never included in the client PDF.
           </p>
           {group("Auto-accepted", "var(--green)", autoAccepted)}
           {group("Review required", "#d97706", reviewRequired)}
           {group("Rejected / Needs source", "#dc2626", rejected)}
+
+          {packagesByRole.length > 0 && (
+            <div style={{ marginTop: 6 }}>
+              <button onClick={() => setShowDebug(d => !d)} style={{ fontSize: 11, padding: "5px 12px", borderRadius: 20, background: "var(--bg)", color: "var(--dim)", border: "1.5px solid rgba(15,18,64,0.1)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>
+                {showDebug ? "Hide" : "Show"} context package (debug)
+              </button>
+              {showDebug && packagesByRole.map(({ role, text }) => (
+                <div key={role} style={{ marginTop: 10 }}>
+                  <p style={{ fontSize: 10, letterSpacing: "1px", textTransform: "uppercase", color: "var(--accent)", fontWeight: 700, marginBottom: 4 }}>→ {role.replace(/_/g, " ")} prompt injection</p>
+                  <pre style={{ background: "#0d1530", color: "#c8d4f0", padding: "12px 14px", borderRadius: 8, fontSize: 11, lineHeight: 1.5, overflowX: "auto", whiteSpace: "pre-wrap", fontFamily: "'Courier New', monospace" }}>{text || "(empty — nothing to inject)"}</pre>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

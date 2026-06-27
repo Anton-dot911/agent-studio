@@ -48,7 +48,9 @@ export async function POST(req: NextRequest) {
             source: html,
             landscape: false,
             use_print_media: false,
-            margin: { top: "0mm", right: "0mm", bottom: "0mm", left: "0mm" },
+            // Bottom margin prevents the final page's content from being clipped at
+            // the page edge; top/sides stay 0 so the cover banner remains full-bleed.
+            margin: { top: "0mm", right: "0mm", bottom: "12mm", left: "0mm" },
           }),
         });
         if (pdfRes.ok) {
@@ -119,9 +121,9 @@ function renderBlock(b: DocBlock): string {
   }
   if (b.type === "highlight") return `<div style="background:#eef4fc;border-left:4px solid #0055b3;border-radius:4px;padding:14px 16px;margin-bottom:14px;"><div style="font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#0055b3;font-weight:700;margin-bottom:6px;">${esc(b.label)}</div><div style="font-size:13.5px;line-height:1.6;color:#1a2a44;">${esc(b.text)}</div></div>`;
   if (b.type === "table") {
-    const headers = b.headers.map(h => `<th style="background:#0055b3;color:#fff;text-align:left;padding:9px 12px;font-weight:600;">${esc(h)}</th>`).join("");
-    const rows = b.rows.map((r, ri) => `<tr>${r.map(c => `<td style="padding:9px 12px;border-bottom:1px solid #e3e8f0;color:#2a2a3a;${ri % 2 === 1 ? "background:#f6f9fd;" : ""}">${esc(c)}</td>`).join("")}</tr>`).join("");
-    return `<table style="width:100%;border-collapse:collapse;margin-bottom:14px;font-size:12.5px;"><thead><tr>${headers}</tr></thead><tbody>${rows}</tbody></table>`;
+    const headers = b.headers.map(h => `<th style="background:#0055b3;color:#fff;text-align:left;padding:9px 12px;font-weight:600;word-break:break-word;overflow-wrap:anywhere;vertical-align:top;">${esc(h)}</th>`).join("");
+    const rows = b.rows.map((r, ri) => `<tr style="page-break-inside:avoid;">${r.map(c => `<td style="padding:9px 12px;border-bottom:1px solid #e3e8f0;color:#2a2a3a;word-break:break-word;overflow-wrap:anywhere;white-space:normal;vertical-align:top;${ri % 2 === 1 ? "background:#f6f9fd;" : ""}">${esc(c)}</td>`).join("")}</tr>`).join("");
+    return `<table style="width:100%;border-collapse:collapse;margin-bottom:14px;font-size:12.5px;table-layout:fixed;"><thead><tr>${headers}</tr></thead><tbody>${rows}</tbody></table>`;
   }
   if (b.type === "code") return `<pre style="background:#0d1530;color:#c8d4f0;padding:14px 16px;border-radius:6px;font-size:12px;line-height:1.6;margin-bottom:14px;font-family:monospace;white-space:pre-wrap;">${esc(b.text)}</pre>`;
   return "";
