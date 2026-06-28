@@ -471,6 +471,11 @@ export default function RunPage() {
     const showQABar = (status === "document" || status === "qa_checking") && !wasRevised;
     const showQAResult = status === "qa_done" || status === "revising" || status === "delivered" || status === "delivering";
     const canDownloadPdf = wasRevised || (qaReport !== null && qaReport.score >= 9);
+    // The document is ready to send to the client only once it is final: either a
+    // revision has been applied, or QA approved it (score >= 9). Delivery must NOT be
+    // offered on an un-revised draft that QA flagged for revision, and it MUST remain
+    // available after a revision (when qaReport is cleared). Persist through delivery.
+    const documentReady = wasRevised || (qaReport !== null && qaReport.score >= 9);
 
     const qaColor = qaReport
       ? qaReport.score >= 8 ? "var(--green)" : qaReport.score >= 6 ? "#f59e0b" : "#ef4444"
@@ -643,9 +648,24 @@ export default function RunPage() {
                 </div>
               )}
 
-              {/* Delivery form */}
-              {status !== "delivered" && status !== "revising" && (
-                <div className="delivery-panel">
+            </div>
+          )}
+
+          {/* Send to client — standalone card, available once the document is FINAL
+              (QA-approved or revised), independent of the QA panel so it survives the
+              post-revision state where qaReport is cleared. */}
+          {documentReady && (
+            <div className="delivery-panel" style={{ ...card, padding: "20px 22px", marginBottom: 18 }}>
+              {status === "delivered" && deliveryResult ? (
+                <div style={{ background: "rgba(16, 185, 129, 0.08)", borderRadius: 10, padding: "14px 16px", border: "1px solid rgba(16, 185, 129, 0.2)" }}>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: "var(--green)", marginBottom: 6 }}>Delivered</p>
+                  <p style={{ fontSize: 12.5, color: "var(--text)", lineHeight: 1.6 }}>
+                    {deliveryResult.emailSent ? `Email sent to ${clientEmail}` : "Email delivery skipped (no RESEND_API_KEY configured)"}
+                    {deliveryResult.pdfGenerated ? " · PDF generated via PDFShift" : " · Use Download PDF for the branded copy"}
+                  </p>
+                </div>
+              ) : (
+                <>
                   <p style={{ fontSize: 10, letterSpacing: "2px", textTransform: "uppercase", color: "var(--dim)", fontWeight: 700, marginBottom: 10 }}>Send to Client</p>
                   <div style={{ display: "flex", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
                     <input
@@ -670,18 +690,7 @@ export default function RunPage() {
                     </button>
                   </div>
                   {error && <p style={{ fontSize: 12.5, color: "#ef4444" }}>{error}</p>}
-                </div>
-              )}
-
-              {/* Delivery success */}
-              {status === "delivered" && deliveryResult && (
-                <div style={{ background: "rgba(16, 185, 129, 0.08)", borderRadius: 10, padding: "14px 16px", border: "1px solid rgba(16, 185, 129, 0.2)" }}>
-                  <p style={{ fontSize: 13, fontWeight: 700, color: "var(--green)", marginBottom: 6 }}>Delivered</p>
-                  <p style={{ fontSize: 12.5, color: "var(--text)", lineHeight: 1.6 }}>
-                    {deliveryResult.emailSent ? `Email sent to ${clientEmail}` : "Email delivery skipped (no RESEND_API_KEY configured)"}
-                    {deliveryResult.pdfGenerated ? " · PDF generated via PDFShift" : " · Use Save as PDF for browser print"}
-                  </p>
-                </div>
+                </>
               )}
             </div>
           )}
