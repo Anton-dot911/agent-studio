@@ -13,6 +13,8 @@
     "@coinbase/onchainkit": "^1.1.2",
     "@supabase/supabase-js": "latest",
     "@tanstack/react-query": "^5.101.0",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
     "next": "16.1.5",
     "react": "^19.1.2",
     "react-dom": "^19.1.2",

@@ -18,12 +18,15 @@ interface TechSpec { title: string; subtitle: string; sections: DocSection[] }
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { techSpec, clientEmail, clientName, projectName, returnPdf } = body as {
+    const { techSpec, clientEmail, clientName, projectName, returnPdf, pdfBase64 } = body as {
       techSpec: TechSpec;
       clientEmail?: string;
       clientName?: string;
       projectName: string;
       returnPdf?: boolean;
+      // Browser-generated PDF (base64, no data: prefix). Used as the attachment when
+      // the server-side PDFShift render is unavailable, so email always carries a PDF.
+      pdfBase64?: string;
     };
 
     if (!techSpec?.title || !projectName) {
@@ -100,8 +103,16 @@ export async function POST(req: NextRequest) {
         const from = process.env.RESEND_FROM_EMAIL || "AntLab <onboarding@resend.dev>";
         const name = clientName || "there";
 
-        const attachments = pdfBuffer
-          ? [{ filename: `${projectName.replace(/\s+/g, "-")}-tech-spec.pdf`, content: Buffer.from(pdfBuffer) }]
+        // Prefer the server PDFShift render; otherwise use the browser-generated PDF
+        // the client sent. Either way the client gets a real PDF attachment.
+        const attachmentBuffer = pdfBuffer
+          ? Buffer.from(pdfBuffer)
+          : pdfBase64
+          ? Buffer.from(pdfBase64, "base64")
+          : null;
+        if (attachmentBuffer) pdfGenerated = true;
+        const attachments = attachmentBuffer
+          ? [{ filename: `${projectName.replace(/\s+/g, "-")}-tech-spec.pdf`, content: attachmentBuffer }]
           : [];
 
         const { data, error } = await resend.emails.send({

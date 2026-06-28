@@ -5,6 +5,7 @@ import { PayAndGenerate } from "../../components/PayAndGenerate";
 import { ENABLE_DCL, type AgentRole, type ContextItem, type ContextStatus } from "../../lib/dcl/types";
 import { materialize, seedBaseContextItems } from "../../lib/dcl/classify";
 import { baseContextFromIntake, buildAndRender } from "../../lib/dcl/package";
+import { pdfBlobFromSpec, pdfBase64FromSpec } from "../../lib/pdf/clientPdf";
 
 type RunStatus =
   | "idle"
@@ -429,13 +430,23 @@ export default function RunPage() {
       a.remove();
       URL.revokeObjectURL(url);
     } catch (e) {
-      // Server-side PDF render unavailable (e.g. PDFSHIFT_API_KEY not set, or a
-      // PDFShift error). Surface the real reason, then fall back to browser print,
-      // which still produces a chrome-free document via @media print — Download
-      // never hard-fails.
-      console.error("[download] server PDF failed, falling back to print:", e);
-      setError((e instanceof Error ? e.message : "Branded PDF unavailable") + " — opened browser print as a fallback.");
-      window.print();
+      // Server-side PDF render unavailable (PDFSHIFT_API_KEY not set, out of credits,
+      // etc.). Generate the branded PDF entirely in the browser instead — Download
+      // always produces a real AntLab PDF file, with no external dependency.
+      console.error("[download] server PDF unavailable, using browser-generated PDF:", e);
+      try {
+        const blob = pdfBlobFromSpec(spec as unknown as Parameters<typeof pdfBlobFromSpec>[0]);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${form.projectName.replace(/\s+/g, "-")}-AntLab-tech-spec.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      } catch (e2) {
+        setError("PDF download failed: " + (e2 instanceof Error ? e2.message : String(e2)));
+      }
     } finally {
       setDownloading(false);
     }
@@ -447,10 +458,17 @@ export default function RunPage() {
     setStatus("delivering"); setError("");
     const timer = startTimer(s => setElapsed(s));
     try {
+      // Generate the branded PDF in the browser and send it along, so the email can
+      // be attached even when the server PDFShift render is unavailable. The server
+      // still prefers its own PDFShift render when it succeeds.
+      let pdfBase64: string | undefined;
+      try { pdfBase64 = pdfBase64FromSpec(spec as unknown as Parameters<typeof pdfBase64FromSpec>[0]); }
+      catch (e) { console.error("[deliver] client PDF generation failed:", e); }
+
       const res = await fetch("/api/agents/deliver", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ techSpec: spec, clientEmail, clientName, projectName: form.projectName }),
+        body: JSON.stringify({ techSpec: spec, clientEmail, clientName, projectName: form.projectName, pdfBase64 }),
       });
       timer.stop();
       const raw = await res.text();
