@@ -2,6 +2,9 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { PayAndGenerate } from "../../components/PayAndGenerate";
+import { ENABLE_DCL, type AgentRole, type ContextItem, type ContextStatus } from "../../lib/dcl/types";
+import { materialize, seedBaseContextItems } from "../../lib/dcl/classify";
+import { baseContextFromIntake, buildAndRender } from "../../lib/dcl/package";
 
 type RunStatus =
   | "idle"
@@ -119,8 +122,52 @@ export default function RunPage() {
   const [meta, setMeta] = useState<{ costUsd: number; tokens: number } | null>(null);
   const [wasRevised, setWasRevised] = useState(false);
   const [isPaid, setIsPaid] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  // ── Dynamic Context Layer (in-session) ───────────────────────────────────────
+  const [contextItems, setContextItems] = useState<ContextItem[]>([]);
+  const [architectReport, setArchitectReport] = useState<Record<string, unknown> | null>(null);
 
   const set = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }));
+
+  // Run the Context Extractor on an agent output and return the materialized items.
+  // Non-fatal by contract: any failure logs and returns [] so the pipeline continues.
+  const runExtract = async (agentOutput: unknown, agentRole: AgentRole): Promise<ContextItem[]> => {
+    if (!ENABLE_DCL) return [];
+    try {
+      const res = await fetch("/api/agents/extract", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agentOutput, agentRole, documentType: form.documentNeeds }),
+      });
+      const json = await res.json() as { data?: { suggested_context_items?: unknown[] } };
+      const suggested = json?.data?.suggested_context_items;
+      if (Array.isArray(suggested) && suggested.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return materialize(suggested as any, agentRole, new Date().toISOString());
+      }
+    } catch (e) {
+      console.error("[dcl] extraction failed for", agentRole, e);
+    }
+    return [];
+  };
+
+  // Build the role-specific context package text to inject into an agent prompt.
+  // Reads the given items snapshot (callers pass the current state) and never throws.
+  const packageFor = (role: AgentRole, items: ContextItem[]): string | undefined => {
+    if (!ENABLE_DCL) return undefined;
+    try {
+      const text = buildAndRender(baseContextFromIntake(form), items, role);
+      return text || undefined;
+    } catch (e) {
+      console.error("[dcl] package build failed for", role, e);
+      return undefined;
+    }
+  };
+
+  // User override on a suggested context item (optional — auto-accept means the
+  // pipeline never waits on this, but the user can still correct the engine).
+  const setItemStatus = (id: string, status: ContextStatus) =>
+    setContextItems(prev => prev.map(it => (it.id === id ? { ...it, status } : it)));
   const card = { background: "var(--card)", borderRadius: 20, boxShadow: "var(--shadow)" } as React.CSSProperties;
 
   const startTimer = (cb: (elapsed: number) => void) => {
@@ -178,7 +225,7 @@ export default function RunPage() {
   // so they can produce a full-quality document without hitting the request timeout.
   // We start the job, then poll its status in Supabase until it finishes.
   const runJob = async (
-    kind: "writer" | "revise" | "critic" | "research",
+    kind: "writer" | "revise" | "critic" | "research" | "architect",
     input: object,
     paymentTxHash?: string
   ): Promise<{ data: Record<string, unknown>; meta: Record<string, unknown> }> => {
@@ -219,12 +266,19 @@ export default function RunPage() {
   const runResearch = async () => {
     if (!form.projectName) { setError("Enter a project name to continue"); return; }
     setStatus("running"); setResearchResult(null); setSpec(null); setQaReport(null); setCriticReport(null); setError(""); setMeta(null); setWasRevised(false); setIsPaid(false);
+    setContextItems([]); setArchitectReport(null);
     const timer = startTimer(s => setElapsed(s));
     try {
       const { data, meta } = await runJob("research", { intakeData: form });
       const secs = timer.stop(); setElapsed(secs);
       setResearchResult(data);
       setMeta({ costUsd: (meta.costUsd as number) ?? 0, tokens: ((meta.inputTokens as number) ?? 0) + ((meta.outputTokens as number) ?? 0) });
+      // DCL: Context v0 (base) + items extracted from the research brief.
+      if (ENABLE_DCL) {
+        const baseItems = seedBaseContextItems(baseContextFromIntake(form), new Date().toISOString());
+        const researchItems = await runExtract(data, "research");
+        setContextItems([...baseItems, ...researchItems]);
+      }
       setStatus("done");
     } catch (e) {
       timer.stop();
@@ -238,11 +292,18 @@ export default function RunPage() {
     setStatus("writing"); setError("");
     const timer = startTimer(s => setElapsed(s));
     try {
-      const { data, meta } = await runJob("writer", { intakeData: form, researchReport: researchResult }, paymentTxHash);
+      // DCL: give the Writer a validated, role-specific context package.
+      const contextPackage = packageFor("writer", contextItems);
+      const { data, meta } = await runJob("writer", { intakeData: form, researchReport: researchResult, contextPackage }, paymentTxHash);
       timer.stop();
       setSpec(data as unknown as TechSpec);
       setMeta({ costUsd: (meta.costUsd as number) ?? 0, tokens: ((meta.inputTokens as number) ?? 0) + ((meta.outputTokens as number) ?? 0) });
       setWasRevised(false);
+      // DCL: extract context from the draft for the review agents that follow.
+      if (ENABLE_DCL) {
+        const writerItems = await runExtract(data, "writer");
+        if (writerItems.length > 0) setContextItems(prev => [...prev, ...writerItems]);
+      }
       setStatus("document");
     } catch (e) {
       timer.stop();
@@ -256,30 +317,62 @@ export default function RunPage() {
     setStatus("qa_checking"); setError("");
     const timer = startTimer(s => setElapsed(s));
     try {
-      // QA (edge SSE) and Critic (background job) run in parallel - two
-      // independent reviewers. QA checks quality/requirements; Critic attacks
-      // the document the way a skeptical investor/CTO/client would.
-      const qaPromise = fetchSSE("/api/agents/qa", { techSpec: spec, researchReport: researchResult, documentType: form.documentNeeds });
+      // Three independent reviewers run in parallel after the Writer:
+      //   QA (edge SSE)            — quality / requirement coverage
+      //   Critic (background job)  — adversarial credibility attack
+      //   Implementation Architect — build-readiness (DCL-gated; new agent)
+      // Each reviewer additive: if one fails, the others still drive the flow.
+      const qaPackage = packageFor("qa", contextItems);
+      const criticPackage = packageFor("critic", contextItems);
+      const architectPackage = packageFor("implementation_architect", contextItems);
+
+      const qaPromise = fetchSSE("/api/agents/qa", { techSpec: spec, researchReport: researchResult, documentType: form.documentNeeds, contextPackage: qaPackage });
       const criticPromise = runJob("critic", {
         techSpec: spec,
         researchReport: researchResult,
         intakeData: form,
         documentType: form.documentNeeds,
         targetAudience: form.targetAudience,
+        contextPackage: criticPackage,
       }).catch((e) => {
-        // Critic is additive - if it fails, QA still drives the flow.
         console.error("Critic failed:", e);
         return null;
       });
+      const architectPromise = ENABLE_DCL
+        ? runJob("architect", {
+            techSpec: spec,
+            researchReport: researchResult,
+            intakeData: form,
+            documentType: form.documentNeeds,
+            contextPackage: architectPackage,
+          }).catch((e) => {
+            console.error("Architect failed:", e);
+            return null;
+          })
+        : Promise.resolve(null);
 
-      const [{ data, meta }, criticOut] = await Promise.all([qaPromise, criticPromise]);
+      const [{ data, meta }, criticOut, architectOut] = await Promise.all([qaPromise, criticPromise, architectPromise]);
       timer.stop();
 
       setQaReport(data as unknown as QAReport);
       if (criticOut && criticOut.data) {
         setCriticReport(criticOut.data as Record<string, unknown>);
       }
+      if (architectOut && architectOut.data) {
+        setArchitectReport(architectOut.data as Record<string, unknown>);
+      }
       setMeta({ costUsd: (meta.costUsd as number) ?? 0, tokens: ((meta.inputTokens as number) ?? 0) + ((meta.outputTokens as number) ?? 0) });
+
+      // DCL: distill each reviewer's findings into context items for the Reviser.
+      if (ENABLE_DCL) {
+        const [qaItems, criticItems, architectItems] = await Promise.all([
+          runExtract(data, "qa"),
+          criticOut?.data ? runExtract(criticOut.data, "critic") : Promise.resolve([]),
+          architectOut?.data ? runExtract(architectOut.data, "implementation_architect") : Promise.resolve([]),
+        ]);
+        const merged = [...qaItems, ...criticItems, ...architectItems];
+        if (merged.length > 0) setContextItems(prev => [...prev, ...merged]);
+      }
       setStatus("qa_done");
     } catch (e) {
       timer.stop();
@@ -293,7 +386,10 @@ export default function RunPage() {
     setStatus("revising"); setError("");
     const timer = startTimer(s => setElapsed(s));
     try {
-      const { data, meta } = await runJob("revise", { techSpec: spec, qaReport, criticReport, intakeData: form, documentType: form.documentNeeds });
+      // DCL: the Reviser gets a validated package (constraints + accepted findings)
+      // plus the structured Critic and Implementation Architect reports.
+      const contextPackage = packageFor("revise", contextItems);
+      const { data, meta } = await runJob("revise", { techSpec: spec, qaReport, criticReport, architectReport, intakeData: form, documentType: form.documentNeeds, contextPackage });
       timer.stop();
       setSpec(data as unknown as TechSpec);
       setQaReport(null);
@@ -304,6 +400,42 @@ export default function RunPage() {
       timer.stop();
       setError(e instanceof Error ? e.message : "Revision failed. Try again.");
       setStatus("qa_done");
+    }
+  };
+
+  // Download the AntLab-styled PDF from the deliver route (server-side PDFShift
+  // render). This replaces window.print() so the file is the branded document only —
+  // never the browser preview / app chrome.
+  const downloadPdf = async () => {
+    if (!spec) return;
+    setDownloading(true); setError("");
+    try {
+      const res = await fetch("/api/agents/deliver", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ techSpec: spec, projectName: form.projectName, returnPdf: true }),
+      });
+      if (!res.ok) {
+        const t = await res.text();
+        throw new Error("PDF generation failed: " + t.slice(0, 160));
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${form.projectName.replace(/\s+/g, "-")}-AntLab-tech-spec.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      // Server-side PDF render unavailable (e.g. PDFSHIFT_API_KEY not set, or a
+      // PDFShift error). Fall back to browser print, which still produces a
+      // chrome-free document via the @media print rules — Download never hard-fails.
+      console.error("[download] server PDF failed, falling back to print:", e);
+      window.print();
+    } finally {
+      setDownloading(false);
     }
   };
 
@@ -352,11 +484,16 @@ export default function RunPage() {
             .doc-page { background: #ffffff; border-radius: 10px; box-shadow: var(--nm-out); overflow: hidden; color: #1a1a2e; }
           }
           @media print {
-            .doc-bar,.qa-panel,.delivery-panel { display: none !important; }
+            /* Only the document itself prints — every other card/panel/toolbar in
+               the workspace is suppressed, so no app chrome can leak into the PDF. */
+            .doc-wrap > :not(.doc-page) { display: none !important; }
+            .doc-bar,.qa-panel,.delivery-panel,.dcl-panel { display: none !important; }
             .doc-wrap { max-width: none; margin: 0; padding: 0; }
-            .doc-page { box-shadow: none; border-radius: 0; }
+            .doc-page { box-shadow: none; border-radius: 0; overflow: visible; }
             body { background: #fff !important; }
             .sec { break-inside: avoid; }
+            table.spec, table.spec tr, .hl, pre.code { break-inside: avoid; }
+            .body { padding-bottom: 28px; }
           }
           .doc-page * { font-family: 'Helvetica Neue', Arial, sans-serif; }
           .cover { background: #0055b3; color: #fff; padding: 56px 44px; }
@@ -374,9 +511,9 @@ export default function RunPage() {
           .hl { background: #eef4fc; border-left: 4px solid #0055b3; border-radius: 4px; padding: 14px 16px; margin-bottom: 14px; }
           .hl .hl-label { font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: #0055b3; font-weight: 700; margin-bottom: 6px; }
           .hl .hl-text { font-size: 13.5px; line-height: 1.6; color: #1a2a44; }
-          table.spec { width: 100%; border-collapse: collapse; margin-bottom: 14px; font-size: 12.5px; }
-          table.spec th { background: #0055b3; color: #fff; text-align: left; padding: 9px 12px; font-weight: 600; }
-          table.spec td { padding: 9px 12px; border-bottom: 1px solid #e3e8f0; color: #2a2a3a; }
+          table.spec { width: 100%; border-collapse: collapse; margin-bottom: 14px; font-size: 12.5px; table-layout: fixed; }
+          table.spec th { background: #0055b3; color: #fff; text-align: left; padding: 9px 12px; font-weight: 600; word-break: break-word; overflow-wrap: anywhere; vertical-align: top; }
+          table.spec td { padding: 9px 12px; border-bottom: 1px solid #e3e8f0; color: #2a2a3a; word-break: break-word; overflow-wrap: anywhere; white-space: normal; vertical-align: top; }
           table.spec tr:nth-child(even) td { background: #f6f9fd; }
           pre.code { background: #0d1530; color: #c8d4f0; padding: 14px 16px; border-radius: 6px; font-size: 12px; line-height: 1.6; overflow-x: auto; margin-bottom: 14px; font-family: 'Courier New', monospace !important; white-space: pre-wrap; }
           .foot { padding: 20px 44px; border-top: 1px solid #e3e8f0; font-size: 11px; color: #8a93a8; }
@@ -388,7 +525,7 @@ export default function RunPage() {
           <div className="doc-bar">
             <button onClick={() => setStatus("done")} style={{ fontSize: 13, padding: "9px 20px", borderRadius: 50, background: "var(--card)", boxShadow: "var(--shadow-sm)", color: "var(--text)", border: "1.5px solid rgba(15,18,64,0.10)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>← Back</button>
             {canDownloadPdf && (
-              <button onClick={() => window.print()} style={{ fontSize: 13, padding: "9px 22px", borderRadius: 50, background: "var(--accent)", color: "#fff", boxShadow: "0 4px 14px rgba(33,37,102,0.28)", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>Download PDF</button>
+              <button onClick={downloadPdf} disabled={downloading} style={{ fontSize: 13, padding: "9px 22px", borderRadius: 50, background: "var(--accent)", color: "#fff", boxShadow: "0 4px 14px rgba(33,37,102,0.28)", border: "none", cursor: downloading ? "default" : "pointer", fontFamily: "inherit", fontWeight: 700 }}>{downloading ? "Generating PDF…" : "Download PDF"}</button>
             )}
 
             {showQABar && (
@@ -429,6 +566,19 @@ export default function RunPage() {
                 </div>
               </div>
 
+              {/* Implementation Architect — build-readiness summary */}
+              {architectReport && (architectReport.verdict as Record<string, unknown> | undefined) && (
+                <div style={{ background: "var(--bg)", borderRadius: 10, padding: "12px 14px", marginBottom: 12, borderLeft: "3px solid #6d28d9" }}>
+                  <p style={{ fontSize: 10, letterSpacing: "2px", textTransform: "uppercase", color: "#6d28d9", fontWeight: 700, marginBottom: 6 }}>
+                    Implementation Architect — build readiness {typeof (architectReport.verdict as Record<string, unknown>).buildReadinessScore === "number" ? `${(architectReport.verdict as Record<string, unknown>).buildReadinessScore}/10` : ""}
+                  </p>
+                  <p style={{ fontSize: 12.5, color: "var(--text)", lineHeight: 1.55 }}>{String((architectReport.verdict as Record<string, unknown>).summary ?? "")}</p>
+                  {(architectReport.verdict as Record<string, unknown>).biggestBlocker ? (
+                    <p style={{ fontSize: 12, color: "var(--dim)", lineHeight: 1.5, marginTop: 6 }}>Biggest blocker: {String((architectReport.verdict as Record<string, unknown>).biggestBlocker)}</p>
+                  ) : null}
+                </div>
+              )}
+
               {qaReport.criticalIssues.length > 0 && (
                 <div style={{ marginBottom: 12 }}>
                   <p style={{ fontSize: 10, letterSpacing: "2px", textTransform: "uppercase", color: "#ef4444", fontWeight: 700, marginBottom: 6 }}>Critical Issues</p>
@@ -452,8 +602,8 @@ export default function RunPage() {
 
               {/* score >= 9: ready, show Download PDF */}
               {qaReport.score >= 9 && (
-                <button onClick={() => window.print()} style={{ width: "100%", padding: "14px 18px", borderRadius: 50, background: "var(--green)", color: "#fff", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 14, boxShadow: "0 4px 16px rgba(16,185,129,0.30)", marginBottom: 14 }}>
-                  Download PDF
+                <button onClick={downloadPdf} disabled={downloading} style={{ width: "100%", padding: "14px 18px", borderRadius: 50, background: "var(--green)", color: "#fff", border: "none", cursor: downloading ? "default" : "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 14, boxShadow: "0 4px 16px rgba(16,185,129,0.30)", marginBottom: 14 }}>
+                  {downloading ? "Generating PDF…" : "Download PDF"}
                 </button>
               )}
 
@@ -534,6 +684,11 @@ export default function RunPage() {
             </div>
           )}
 
+          {/* DCL: context layer feeding the Reviser */}
+          {showQAResult && (
+            <DclPanel items={contextItems} onSetStatus={setItemStatus} card={card} title="Dynamic Context — feeding the Reviser" form={form} previewRoles={["revise"]} />
+          )}
+
           {/* Post-revision success card */}
           {wasRevised && status === "document" && (
             <div style={{ ...card, padding: "20px 22px", marginBottom: 18, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", border: "1.5px solid rgba(16,185,129,0.20)" }}>
@@ -544,8 +699,8 @@ export default function RunPage() {
                   <p style={{ fontSize: 12, color: "var(--dim)" }}>Всі пункти Checklist враховані. Готово до завантаження.</p>
                 </div>
               </div>
-              <button onClick={() => window.print()} style={{ padding: "12px 28px", borderRadius: 50, background: "var(--accent)", color: "#fff", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 14, boxShadow: "0 4px 16px rgba(33,37,102,0.28)", whiteSpace: "nowrap" }}>
-                Download PDF
+              <button onClick={downloadPdf} disabled={downloading} style={{ padding: "12px 28px", borderRadius: 50, background: "var(--accent)", color: "#fff", border: "none", cursor: downloading ? "default" : "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 14, boxShadow: "0 4px 16px rgba(33,37,102,0.28)", whiteSpace: "nowrap" }}>
+                {downloading ? "Generating PDF…" : "Download PDF"}
               </button>
             </div>
           )}
@@ -553,7 +708,7 @@ export default function RunPage() {
           {/* Document */}
           <div className="doc-page">
             <div className="cover">
-              <span className="badge">Agent Studio</span>
+              <span className="badge">AntLab</span>
               <h1>{spec.title}</h1>
               <p>{spec.subtitle}</p>
             </div>
@@ -577,7 +732,7 @@ export default function RunPage() {
                 </div>
               ))}
             </div>
-            <div className="foot">Generated by Agent Studio — {spec.title} — Confidential</div>
+            <div className="foot">Prepared by AntLab — {spec.title} — Confidential</div>
           </div>
         </div>
       </>
@@ -701,6 +856,8 @@ export default function RunPage() {
 
           {error && <div style={{ ...card, padding: "14px 16px", marginBottom: 16, color: "#c83838", fontSize: 13 }}>{error}</div>}
 
+          <DclPanel items={contextItems} onSetStatus={setItemStatus} card={card} title="Dynamic Context — after Research" form={form} previewRoles={["writer"]} />
+
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             {Object.entries(researchResult).map(([key, val]) => {
               const accent = key === "redFlags" ? "#c83838" : key === "opportunities" ? "var(--green)" : "var(--accent)";
@@ -745,5 +902,121 @@ export default function RunPage() {
         </div>
       )}
     </main>
+  );
+}
+
+// ── Dynamic Context Layer panel ────────────────────────────────────────────────
+// Read-mostly view of the in-session context items, grouped by status. Auto-accept
+// is the policy, so this never blocks the pipeline — but the user can still correct
+// a flagged ("review required") item with Accept / Reject, or archive any item.
+const TYPE_COLOR: Record<string, string> = {
+  constraint: "#2563eb", decision: "#6d28d9", risk: "#dc2626", assumption: "#7c3aed",
+  market_claim: "#d97706", security_issue: "#dc2626", legal_issue: "#dc2626",
+  technical_gap: "#0f766e", source_requirement: "#0f766e", open_question: "#9333ea",
+  review_finding: "#0891b2", formatting_issue: "#64748b", goal: "#2563eb",
+  agent_instruction: "#475569",
+};
+
+function DclPanel({
+  items,
+  onSetStatus,
+  card,
+  title,
+  form,
+  previewRoles = [],
+}: {
+  items: ContextItem[];
+  onSetStatus: (id: string, status: ContextStatus) => void;
+  card: React.CSSProperties;
+  title: string;
+  form?: Record<string, string>;
+  previewRoles?: AgentRole[];
+}) {
+  const [open, setOpen] = useState(true);
+  const [showDebug, setShowDebug] = useState(false);
+  if (!ENABLE_DCL || items.length === 0) return null;
+
+  const visible = items.filter(i => i.status !== "archived");
+  const autoAccepted = visible.filter(i => i.status === "auto_accepted" || i.status === "accepted");
+  const reviewRequired = visible.filter(i => i.status === "review_required");
+  const rejected = visible.filter(i => i.status === "rejected");
+
+  const chip = (label: string, color: string) => (
+    <span style={{ fontSize: 9, letterSpacing: "0.5px", textTransform: "uppercase", fontWeight: 700, color, background: `${color}14`, padding: "2px 7px", borderRadius: 20, whiteSpace: "nowrap" }}>{label}</span>
+  );
+
+  const row = (it: ContextItem) => (
+    <div key={it.id} style={{ background: "var(--bg)", borderRadius: 10, padding: "10px 12px", marginBottom: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5, flexWrap: "wrap" }}>
+        {chip(it.type.replace(/_/g, " "), TYPE_COLOR[it.type]?.trim() || "#475569")}
+        {chip(it.risk_level, it.risk_level === "critical" || it.risk_level === "high" ? "#dc2626" : it.risk_level === "medium" ? "#d97706" : "#64748b")}
+        <span style={{ fontSize: 10.5, color: "var(--dim)" }}>via {it.source_agent} · conf {Math.round((it.confidence ?? 0) * 100)}%</span>
+      </div>
+      <p style={{ fontSize: 12.5, color: "var(--text)", lineHeight: 1.5 }}>{it.content}</p>
+      {it.reason && <p style={{ fontSize: 11, color: "var(--dim)", lineHeight: 1.45, marginTop: 4 }}>{it.reason}</p>}
+      {(it.status === "review_required" || it.status === "rejected") && (
+        <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+          <button onClick={() => onSetStatus(it.id, "accepted")} style={{ fontSize: 11, padding: "4px 12px", borderRadius: 20, background: "var(--green)", color: "#fff", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>Accept</button>
+          {it.status !== "rejected" && (
+            <button onClick={() => onSetStatus(it.id, "rejected")} style={{ fontSize: 11, padding: "4px 12px", borderRadius: 20, background: "var(--card)", color: "#dc2626", border: "1.5px solid rgba(220,38,38,0.3)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>Reject</button>
+          )}
+          <button onClick={() => onSetStatus(it.id, "archived")} style={{ fontSize: 11, padding: "4px 12px", borderRadius: 20, background: "var(--card)", color: "var(--dim)", border: "1.5px solid rgba(15,18,64,0.1)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>Archive</button>
+        </div>
+      )}
+    </div>
+  );
+
+  const group = (label: string, color: string, list: ContextItem[]) => {
+    if (list.length === 0) return null;
+    return (
+      <div style={{ marginBottom: 12 }}>
+        <p style={{ fontSize: 10, letterSpacing: "1.5px", textTransform: "uppercase", color, fontWeight: 700, marginBottom: 8 }}>{label} ({list.length})</p>
+        {list.map(row)}
+      </div>
+    );
+  };
+
+  // Internal debug: the EXACT context-package text injected into each upcoming
+  // agent prompt. Rendered with the real builder, behind a toggle, and the whole
+  // panel carries class "dcl-panel" so it is excluded from the client PDF (print).
+  const debugRoles = previewRoles.filter(Boolean);
+  const packagesByRole = form
+    ? debugRoles.map(r => ({ role: r, text: buildAndRender(baseContextFromIntake(form), items, r) }))
+    : [];
+
+  return (
+    <div className="dcl-panel" style={{ ...card, padding: "16px 18px", marginBottom: 16, border: "1.5px solid rgba(109,40,217,0.18)" }}>
+      <button onClick={() => setOpen(o => !o)} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", padding: 0 }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#6d28d9" }} />
+          <span style={{ fontSize: 12, fontWeight: 700, color: "var(--bright)" }}>{title}</span>
+        </span>
+        <span style={{ fontSize: 11, color: "var(--dim)" }}>{visible.length} items · {reviewRequired.length} flagged{open ? " ▲" : " ▼"}</span>
+      </button>
+      {open && (
+        <div style={{ marginTop: 14 }}>
+          <p style={{ fontSize: 11, color: "var(--dim)", lineHeight: 1.5, marginBottom: 12 }}>
+            Validated context passed forward to the next agents. High-impact items are flagged for review (never treated as fact); low-risk operational items are auto-accepted. This panel is internal — it is never included in the client PDF.
+          </p>
+          {group("Auto-accepted", "var(--green)", autoAccepted)}
+          {group("Review required", "#d97706", reviewRequired)}
+          {group("Rejected / Needs source", "#dc2626", rejected)}
+
+          {packagesByRole.length > 0 && (
+            <div style={{ marginTop: 6 }}>
+              <button onClick={() => setShowDebug(d => !d)} style={{ fontSize: 11, padding: "5px 12px", borderRadius: 20, background: "var(--bg)", color: "var(--dim)", border: "1.5px solid rgba(15,18,64,0.1)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>
+                {showDebug ? "Hide" : "Show"} context package (debug)
+              </button>
+              {showDebug && packagesByRole.map(({ role, text }) => (
+                <div key={role} style={{ marginTop: 10 }}>
+                  <p style={{ fontSize: 10, letterSpacing: "1px", textTransform: "uppercase", color: "var(--accent)", fontWeight: 700, marginBottom: 4 }}>→ {role.replace(/_/g, " ")} prompt injection</p>
+                  <pre style={{ background: "#0d1530", color: "#c8d4f0", padding: "12px 14px", borderRadius: 8, fontSize: 11, lineHeight: 1.5, overflowX: "auto", whiteSpace: "pre-wrap", fontFamily: "'Courier New', monospace" }}>{text || "(empty — nothing to inject)"}</pre>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

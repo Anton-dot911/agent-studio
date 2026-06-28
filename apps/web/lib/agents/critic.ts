@@ -138,6 +138,8 @@ export interface CriticInput {
   documentType?: string;
   targetAudience?: string;
   qualityStandard?: string;
+  // DCL: validated, role-specific context package rendered as a prompt section.
+  contextPackage?: string;
 }
 
 export interface CriticMeta {
@@ -153,31 +155,26 @@ export interface CriticResult {
   meta: CriticMeta;
 }
 
+import { parseJsonLoose } from "./json-repair";
+
 interface AnthropicResponse {
   content?: { type: string; text?: string }[];
   usage?: { input_tokens: number; output_tokens: number };
 }
 
 function parseJson(raw: string): unknown {
-  const clean = raw
-    .replace(/^```json\s*/i, "")
-    .replace(/^```\s*/i, "")
-    .replace(/\s*```\s*$/i, "")
-    .trim();
   try {
-    return JSON.parse(clean);
+    return parseJsonLoose(raw);
   } catch {
-    const m = clean.match(/\{[\s\S]*\}/);
-    if (m) return JSON.parse(m[0]);
     throw new Error("Failed to parse critic response as JSON");
   }
 }
 
 export async function generateCritic(apiKey: string, input: CriticInput): Promise<CriticResult> {
-  const { techSpec, researchReport, intakeData, documentType, targetAudience, qualityStandard } = input;
+  const { techSpec, researchReport, intakeData, documentType, targetAudience, qualityStandard, contextPackage } = input;
   const startTime = Date.now();
 
-  const userMessage = `DOCUMENT_TYPE: ${documentType ?? intakeData?.documentNeeds ?? "Technical Specification"}
+  const userMessage = `${contextPackage ? `${contextPackage}\n\n` : ""}DOCUMENT_TYPE: ${documentType ?? intakeData?.documentNeeds ?? "Technical Specification"}
 TARGET_AUDIENCE: ${targetAudience ?? intakeData?.targetAudience ?? "investors, technical buyers, enterprise decision-makers"}
 INTENDED_USE: client proposal / investor review / developer handoff
 QUALITY_STANDARD: ${qualityStandard ?? "investor-ready"}
@@ -202,7 +199,7 @@ Produce your structured critique now as the JSON object.`;
     },
     body: JSON.stringify({
       model: CRITIC_MODEL,
-      max_tokens: 8000,
+      max_tokens: 12000,
       system: CRITIC_PROMPT,
       messages: [{ role: "user", content: userMessage }],
     }),

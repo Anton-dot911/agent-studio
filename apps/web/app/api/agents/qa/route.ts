@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { parseJsonLoose } from "../../../../lib/agents/json-repair";
 
 export const runtime = "edge";
 export const maxDuration = 60;
@@ -91,10 +92,11 @@ interface AnthropicStreamEvent {
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { techSpec, researchReport, documentType } = body as {
+  const { techSpec, researchReport, documentType, contextPackage } = body as {
     techSpec: { title: string };
     researchReport: unknown;
     documentType?: string;
+    contextPackage?: string;
   };
 
   if (!techSpec?.title || !researchReport) {
@@ -117,7 +119,7 @@ export async function POST(req: NextRequest) {
       try {
         const startTime = Date.now();
 
-        const userMessage = `DOCUMENT TO REVIEW:
+        const userMessage = `${contextPackage ? `${contextPackage}\n\n` : ""}DOCUMENT TO REVIEW:
 ${JSON.stringify(techSpec, null, 2)}
 
 ORIGINAL RESEARCH REPORT (for fact-checking):
@@ -134,7 +136,7 @@ Review this document and return your QA report as JSON.`;
           },
           body: JSON.stringify({
             model: MODEL,
-            max_tokens: 3000,
+            max_tokens: 4000,
             system: systemPrompt,
             messages: [{ role: "user", content: userMessage }],
             stream: true,
@@ -185,10 +187,9 @@ Review this document and return your QA report as JSON.`;
           }
         }
 
-        const clean = fullText.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```\s*$/i, "").trim();
         let data;
-        try { data = JSON.parse(clean); }
-        catch { const m = clean.match(/\{[\s\S]*\}/); if (m) data = JSON.parse(m[0]); else throw new Error("Failed to parse QA response"); }
+        try { data = parseJsonLoose(fullText); }
+        catch { throw new Error("Failed to parse QA response"); }
 
         send({
           type: "done",
