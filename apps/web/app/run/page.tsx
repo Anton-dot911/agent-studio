@@ -429,7 +429,11 @@ export default function RunPage() {
       a.remove();
       URL.revokeObjectURL(url);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "PDF download failed.");
+      // Server-side PDF render unavailable (e.g. PDFSHIFT_API_KEY not set, or a
+      // PDFShift error). Fall back to browser print, which still produces a
+      // chrome-free document via the @media print rules — Download never hard-fails.
+      console.error("[download] server PDF failed, falling back to print:", e);
+      window.print();
     } finally {
       setDownloading(false);
     }
