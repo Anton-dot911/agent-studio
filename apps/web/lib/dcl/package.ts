@@ -1,29 +1,47 @@
-// DCL Context Package Builder.
+// DCL Context Package Builder — generic core.
 //
 // Before an agent runs, this assembles the role-relevant, validated subset of
-// context items plus base project context, ranks and groups them, and renders a
-// compact text block to inject into the agent prompt.
+// context items plus caller-supplied project context, ranks and groups them, and
+// renders a compact text block to inject into the agent prompt.
 //
-// Rules (from the implementation brief, section 10):
-//   1. Drop rejected / archived / superseded items from FACTUAL sections.
-//   2. Include accepted + auto_accepted items.
-//   3. Include review_required items only for review agents — and always clearly
-//      marked as "needs verification, do not treat as fact".
-//   4. Filter by applies_to.
-//   5. Rank by risk level, then confidence, then recency.
-//   6. Group into sections. 7. Cap length. 8. Render.
+// Domain knowledge is injected via PackageContext (project goal, the current task
+// text, output requirements) and PackageConfig (which opaque roles are "review"
+// roles, and which opaque `type` strings fall into each generic section bucket).
+// The core itself contains no roles, types, or domain vocabulary.
 
 import {
   DCL_MAX_CONTEXT_ITEMS_PER_PACKAGE,
-  REVIEW_ROLES,
-  type AgentRole,
-  type BaseContext,
   type ContextItem,
-  type ContextType,
 } from "./types";
 
+// Generic section buckets of a context package (presentation structure, not domain).
+export type SectionKey =
+  | "relevantConstraints"
+  | "acceptedDecisions"
+  | "knownRisks"
+  | "technicalGaps"
+  | "openQuestions"
+  | "reviewFindings";
+
+// Maps each generic bucket to the opaque `type` strings it collects (domain-supplied).
+export type SectionTypeMap = Record<SectionKey, string[]>;
+
+// Caller-supplied, already role-resolved project context for one package.
+export interface PackageContext {
+  projectGoal: string;
+  currentTask: string;
+  outputRequirements: string[];
+}
+
+// Caller-supplied domain configuration.
+export interface PackageConfig {
+  reviewRoles: ReadonlySet<string>;
+  sectionTypes: SectionTypeMap;
+  maxItems?: number;
+}
+
 export interface ContextPackage {
-  agentRole: AgentRole;
+  agentRole: string;
   projectGoal: string;
   currentTask: string;
   relevantConstraints: ContextItem[];
@@ -45,32 +63,13 @@ function rank(a: ContextItem, b: ContextItem): number {
   return (b.confidence ?? 0) - (a.confidence ?? 0);
 }
 
-const SECTION_TYPES: Record<keyof Pick<ContextPackage,
-  "relevantConstraints" | "acceptedDecisions" | "knownRisks" | "technicalGaps" | "openQuestions" | "reviewFindings">, ContextType[]> = {
-  relevantConstraints: ["constraint", "agent_instruction"],
-  acceptedDecisions: ["decision", "assumption"],
-  knownRisks: ["risk", "market_claim", "security_issue", "legal_issue"],
-  technicalGaps: ["technical_gap", "source_requirement"],
-  openQuestions: ["open_question"],
-  reviewFindings: ["review_finding", "formatting_issue"],
-};
-
-const TASK_BY_ROLE: Record<AgentRole, string> = {
-  research: "Research the project and produce a grounded research brief with sources.",
-  writer: "Write the full client deliverable grounded in the validated context below.",
-  qa: "Review the draft for quality, completeness, and requirement coverage.",
-  critic: "Adversarially attack the draft for unsupported claims, contradictions, and risks.",
-  implementation_architect: "Review the draft for build-readiness and concrete implementation gaps.",
-  revise: "Revise the draft, resolving every accepted finding and respecting all constraints.",
-  final_qa: "Final acceptance check against unresolved high-risk items and acceptance criteria.",
-};
-
 export function buildContextPackage(
-  base: BaseContext,
+  ctx: PackageContext,
   items: ContextItem[],
-  role: AgentRole,
+  role: string,
+  config: PackageConfig,
 ): ContextPackage {
-  const isReviewRole = REVIEW_ROLES.has(role);
+  const isReviewRole = config.reviewRoles.has(role);
 
   // Items that apply to this role and are usable as factual guidance.
   const applicable = items.filter(
@@ -87,15 +86,15 @@ export function buildContextPackage(
     ? applicable.filter((i) => i.status === "review_required")
     : [];
 
-  const pick = (key: keyof typeof SECTION_TYPES): ContextItem[] => {
-    const types = SECTION_TYPES[key];
+  const pick = (key: SectionKey): ContextItem[] => {
+    const types = config.sectionTypes[key] ?? [];
     return factual.filter((i) => types.includes(i.type)).sort(rank);
   };
 
   let pkg: ContextPackage = {
     agentRole: role,
-    projectGoal: base.projectGoal,
-    currentTask: TASK_BY_ROLE[role],
+    projectGoal: ctx.projectGoal,
+    currentTask: ctx.currentTask,
     relevantConstraints: pick("relevantConstraints"),
     acceptedDecisions: pick("acceptedDecisions"),
     knownRisks: pick("knownRisks"),
@@ -103,11 +102,11 @@ export function buildContextPackage(
     openQuestions: pick("openQuestions"),
     reviewFindings: pick("reviewFindings"),
     flaggedForVerification: flagged.sort(rank),
-    outputRequirements: base.outputRequirements,
+    outputRequirements: ctx.outputRequirements,
     itemCount: 0,
   };
 
-  pkg = capPackage(pkg, DCL_MAX_CONTEXT_ITEMS_PER_PACKAGE);
+  pkg = capPackage(pkg, config.maxItems ?? DCL_MAX_CONTEXT_ITEMS_PER_PACKAGE);
   pkg.itemCount = countItems(pkg);
   return pkg;
 }
@@ -148,7 +147,8 @@ function capPackage(p: ContextPackage, max: number): ContextPackage {
 }
 
 // Render the package as a compact prompt section. Empty sections are omitted so the
-// agent prompt never bloats with empty headers.
+// agent prompt never bloats with empty headers. The section titles are generic
+// presentation labels, not domain vocabulary.
 export function renderContextPackage(p: ContextPackage): string {
   const lines: string[] = [];
   lines.push("## Dynamic Context Package");
@@ -197,32 +197,14 @@ export function renderContextPackage(p: ContextPackage): string {
 }
 
 // Convenience: build + render in one call. Returns "" when there is nothing useful
-// to inject (no base goal and no items), so callers can cheaply skip injection.
-export function buildAndRender(base: BaseContext, items: ContextItem[], role: AgentRole): string {
-  const pkg = buildContextPackage(base, items, role);
+// to inject (no goal, no items, no output requirements), so callers can skip cheaply.
+export function buildAndRender(
+  ctx: PackageContext,
+  items: ContextItem[],
+  role: string,
+  config: PackageConfig,
+): string {
+  const pkg = buildContextPackage(ctx, items, role, config);
   if (pkg.itemCount === 0 && !pkg.projectGoal && pkg.outputRequirements.length === 0) return "";
   return renderContextPackage(pkg);
-}
-
-// Derive Context v0 (base context) from the raw intake form.
-export function baseContextFromIntake(form: Record<string, string>): BaseContext {
-  const constraints: string[] = [];
-  if (form.blockchain) constraints.push(`Target blockchain / chain context: ${form.blockchain}`);
-  if (form.timeline) constraints.push(`Timeline constraint: ${form.timeline}`);
-  if (form.budget) constraints.push(`Budget constraint: ${form.budget}`);
-  if (form.existingCode && form.existingCode.toLowerCase() !== "none")
-    constraints.push(`Existing code to build on: ${form.existingCode}`);
-
-  return {
-    projectGoal: form.concept || form.projectName || "",
-    documentType: form.documentNeeds || "Tech Spec",
-    targetAudience: form.targetAudience || "",
-    mvpScope: form.documentNeeds || "",
-    knownConstraints: constraints,
-    outputRequirements: [
-      `Produce a client-ready ${form.documentNeeds || "Tech Spec"} document.`,
-      "Every quantitative or market claim must be sourced or marked as an estimate.",
-      "Stay within the stated MVP scope, timeline, and budget.",
-    ],
-  };
 }

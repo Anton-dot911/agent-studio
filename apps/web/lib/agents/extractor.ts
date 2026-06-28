@@ -7,7 +7,7 @@
 // Runs on Haiku 4.5: structured extraction is well within Haiku's capability and
 // keeping it cheap/fast matters because it runs after every pipeline stage.
 
-import type { AgentRole, SuggestedContextItem } from "../dcl/types";
+import type { AgentRole, SuggestedContextItem } from "../dcl-adapter";
 
 export const EXTRACTOR_MODEL = "claude-haiku-4-5";
 

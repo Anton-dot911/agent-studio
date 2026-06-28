@@ -1,29 +1,27 @@
-// DCL hybrid review logic.
+// DCL hybrid review logic — generic core.
 //
-// Turns a raw SuggestedContextItem (from the Context Extractor) into a stored
-// ContextItem with a final status, using deterministic rules so the behaviour is
-// predictable and testable — the model's `recommended_status` is only a secondary
-// signal, never the sole authority.
+// Turns a raw SuggestedContextItem into a stored ContextItem with a final status,
+// using deterministic rules. Which `type` values count as "high impact" is supplied
+// by the caller via ClassificationPolicy — the core does not enumerate domain types.
 //
-// Policy (per product decision "auto-accept + flag", no manual gates):
-//   - Unsupported / speculative / hallucinated  → rejected
-//   - High-impact type OR high/critical risk     → review_required (flagged, still
-//     passed forward to review agents but never treated as fact)
-//   - Everything else low-risk & operational     → auto_accepted
+// Policy:
+//   - recommended "rejected_or_needs_source"        → rejected
+//   - high-impact type OR high/critical risk         → review_required
+//   - recommended "review_required"                  → review_required
+//   - otherwise                                      → auto_accepted
 
-import {
-  HIGH_IMPACT_TYPES,
-  type BaseContext,
-  type ContextItem,
-  type ContextStatus,
-  type SuggestedContextItem,
-} from "./types";
+import type { ContextItem, ContextStatus, RiskLevel, SuggestedContextItem } from "./types";
 
-export function classifyStatus(item: SuggestedContextItem): ContextStatus {
+// Domain-supplied classification policy. `highImpactTypes` holds opaque type strings.
+export interface ClassificationPolicy {
+  highImpactTypes: ReadonlySet<string>;
+}
+
+export function classifyStatus(item: SuggestedContextItem, policy: ClassificationPolicy): ContextStatus {
   if (item.recommended_status === "rejected_or_needs_source") return "rejected";
 
   const highImpact =
-    HIGH_IMPACT_TYPES.has(item.type) ||
+    policy.highImpactTypes.has(item.type) ||
     item.risk_level === "high" ||
     item.risk_level === "critical";
 
@@ -46,40 +44,55 @@ function nextId(): string {
 
 export function materialize(
   suggested: SuggestedContextItem[],
-  sourceAgent: ContextItem["source_agent"],
+  sourceAgent: string,
   createdAt: string,
+  policy: ClassificationPolicy,
 ): ContextItem[] {
   return suggested.map((s) => ({
     id: nextId(),
     type: s.type,
     content: s.content,
     source_agent: sourceAgent,
-    status: classifyStatus(s),
+    status: classifyStatus(s, policy),
     risk_level: s.risk_level,
     confidence: typeof s.confidence === "number" ? s.confidence : 0.5,
     applies_to: Array.isArray(s.applies_to) ? s.applies_to : [],
     reason: s.reason,
+    metadata: s.metadata,
+    domain_tags: s.domain_tags,
     created_at: createdAt,
   }));
 }
 
-// Seed Context v0 items from base project context. These are auto-accepted, apply
-// to every downstream role, and never expire — they are the project's ground rules.
-export function seedBaseContextItems(base: BaseContext, createdAt: string): ContextItem[] {
-  const all: ContextItem["applies_to"] = [
-    "research", "writer", "qa", "critic", "implementation_architect", "revise", "final_qa",
-  ];
-  return base.knownConstraints.map((content) => ({
+// Generic seeding of context items from plain content strings (e.g. base "Context
+// v0"). The caller supplies the opaque role list, type, risk and any domain payload.
+export interface SeedOptions {
+  appliesTo: string[];
+  createdAt: string;
+  type?: string;
+  riskLevel?: RiskLevel;
+  status?: ContextStatus;
+  confidence?: number;
+  sourceAgent?: string;
+  reason?: string;
+  metadata?: Record<string, unknown>;
+  domainTags?: string[];
+}
+
+export function seedContextItems(contents: string[], opts: SeedOptions): ContextItem[] {
+  return contents.map((content) => ({
     id: nextId(),
-    type: "constraint" as const,
+    type: opts.type ?? "constraint",
     content,
-    source_agent: "base" as const,
-    status: "auto_accepted" as const,
-    risk_level: "medium" as const,
-    confidence: 1,
-    applies_to: all,
-    reason: "Base project constraint from intake form.",
-    created_at: createdAt,
+    source_agent: opts.sourceAgent ?? "base",
+    status: opts.status ?? "auto_accepted",
+    risk_level: opts.riskLevel ?? "medium",
+    confidence: opts.confidence ?? 1,
+    applies_to: opts.appliesTo,
+    reason: opts.reason,
+    metadata: opts.metadata,
+    domain_tags: opts.domainTags,
+    created_at: opts.createdAt,
   }));
 }
 
