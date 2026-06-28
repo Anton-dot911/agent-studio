@@ -430,9 +430,11 @@ export default function RunPage() {
       URL.revokeObjectURL(url);
     } catch (e) {
       // Server-side PDF render unavailable (e.g. PDFSHIFT_API_KEY not set, or a
-      // PDFShift error). Fall back to browser print, which still produces a
-      // chrome-free document via the @media print rules — Download never hard-fails.
+      // PDFShift error). Surface the real reason, then fall back to browser print,
+      // which still produces a chrome-free document via @media print — Download
+      // never hard-fails.
       console.error("[download] server PDF failed, falling back to print:", e);
+      setError((e instanceof Error ? e.message : "Branded PDF unavailable") + " — opened browser print as a fallback.");
       window.print();
     } finally {
       setDownloading(false);

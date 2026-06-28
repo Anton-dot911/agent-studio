@@ -38,10 +38,13 @@ export async function POST(req: NextRequest) {
     let emailSent = false;
     let emailId: string | undefined;
     let pdfBuffer: ArrayBuffer | undefined;
+    let pdfError: string | null = null;
 
     // Step 1: Generate PDF via PDFShift (AntLab-branded HTML)
     const pdfShiftKey = process.env.PDFSHIFT_API_KEY;
-    if (pdfShiftKey) {
+    if (!pdfShiftKey) {
+      pdfError = "PDFSHIFT_API_KEY is not set in this deploy context (add it in Netlify env with Deploy-preview + Production scope, then redeploy).";
+    } else {
       try {
         const html = buildDocumentHtml(techSpec);
         const pdfRes = await fetch("https://api.pdfshift.io/v3/convert/pdf", {
@@ -62,10 +65,12 @@ export async function POST(req: NextRequest) {
           pdfGenerated = true;
         } else {
           const errText = await pdfRes.text();
-          console.error("[deliver] PDFShift HTTP", pdfRes.status, errText.slice(0, 200));
+          pdfError = `PDFShift HTTP ${pdfRes.status}: ${errText.slice(0, 300)}`;
+          console.error("[deliver]", pdfError);
         }
       } catch (e) {
-        console.error("[deliver] PDFShift error:", e);
+        pdfError = `PDFShift request error: ${e instanceof Error ? e.message : String(e)}`;
+        console.error("[deliver]", pdfError);
       }
     }
 
@@ -73,7 +78,7 @@ export async function POST(req: NextRequest) {
     if (returnPdf) {
       if (!pdfBuffer) {
         return NextResponse.json(
-          { error: "PDF generation unavailable (PDFSHIFT_API_KEY not configured or PDFShift error)" },
+          { error: `PDF generation failed. ${pdfError ?? "Unknown PDFShift error."}` },
           { status: 503 },
         );
       }
