@@ -18,12 +18,15 @@ interface TechSpec { title: string; subtitle: string; sections: DocSection[] }
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { techSpec, clientEmail, clientName, projectName, returnPdf } = body as {
+    const { techSpec, clientEmail, clientName, projectName, returnPdf, pdfBase64 } = body as {
       techSpec: TechSpec;
       clientEmail?: string;
       clientName?: string;
       projectName: string;
       returnPdf?: boolean;
+      // Browser-generated PDF (base64, no data: prefix). Used as the attachment when
+      // the server-side PDFShift render is unavailable, so email always carries a PDF.
+      pdfBase64?: string;
     };
 
     if (!techSpec?.title || !projectName) {
@@ -38,10 +41,13 @@ export async function POST(req: NextRequest) {
     let emailSent = false;
     let emailId: string | undefined;
     let pdfBuffer: ArrayBuffer | undefined;
+    let pdfError: string | null = null;
 
     // Step 1: Generate PDF via PDFShift (AntLab-branded HTML)
     const pdfShiftKey = process.env.PDFSHIFT_API_KEY;
-    if (pdfShiftKey) {
+    if (!pdfShiftKey) {
+      pdfError = "PDFSHIFT_API_KEY is not set in this deploy context (add it in Netlify env with Deploy-preview + Production scope, then redeploy).";
+    } else {
       try {
         const html = buildDocumentHtml(techSpec);
         const pdfRes = await fetch("https://api.pdfshift.io/v3/convert/pdf", {
@@ -62,10 +68,12 @@ export async function POST(req: NextRequest) {
           pdfGenerated = true;
         } else {
           const errText = await pdfRes.text();
-          console.error("[deliver] PDFShift HTTP", pdfRes.status, errText.slice(0, 200));
+          pdfError = `PDFShift HTTP ${pdfRes.status}: ${errText.slice(0, 300)}`;
+          console.error("[deliver]", pdfError);
         }
       } catch (e) {
-        console.error("[deliver] PDFShift error:", e);
+        pdfError = `PDFShift request error: ${e instanceof Error ? e.message : String(e)}`;
+        console.error("[deliver]", pdfError);
       }
     }
 
@@ -73,7 +81,7 @@ export async function POST(req: NextRequest) {
     if (returnPdf) {
       if (!pdfBuffer) {
         return NextResponse.json(
-          { error: "PDF generation unavailable (PDFSHIFT_API_KEY not configured or PDFShift error)" },
+          { error: `PDF generation failed. ${pdfError ?? "Unknown PDFShift error."}` },
           { status: 503 },
         );
       }
@@ -95,8 +103,16 @@ export async function POST(req: NextRequest) {
         const from = process.env.RESEND_FROM_EMAIL || "AntLab <onboarding@resend.dev>";
         const name = clientName || "there";
 
-        const attachments = pdfBuffer
-          ? [{ filename: `${projectName.replace(/\s+/g, "-")}-tech-spec.pdf`, content: Buffer.from(pdfBuffer) }]
+        // Prefer the server PDFShift render; otherwise use the browser-generated PDF
+        // the client sent. Either way the client gets a real PDF attachment.
+        const attachmentBuffer = pdfBuffer
+          ? Buffer.from(pdfBuffer)
+          : pdfBase64
+          ? Buffer.from(pdfBase64, "base64")
+          : null;
+        if (attachmentBuffer) pdfGenerated = true;
+        const attachments = attachmentBuffer
+          ? [{ filename: `${projectName.replace(/\s+/g, "-")}-tech-spec.pdf`, content: attachmentBuffer }]
           : [];
 
         const { data, error } = await resend.emails.send({
