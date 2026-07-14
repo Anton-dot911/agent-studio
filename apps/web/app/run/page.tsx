@@ -2,9 +2,18 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { PayAndGenerate } from "../../components/PayAndGenerate";
-import { ENABLE_DCL, type AgentRole, type ContextItem, type ContextStatus } from "../../lib/dcl/types";
-import { materialize, seedBaseContextItems } from "../../lib/dcl/classify";
-import { baseContextFromIntake, buildAndRender } from "../../lib/dcl/package";
+// Agent Studio talks to the DCL only through the adapter (lib/dcl-adapter), which
+// binds the generic DCL core to this app's roles, taxonomy, and intake form.
+import {
+  ENABLE_DCL,
+  materialize,
+  seedBaseContextItems,
+  baseContextFromIntake,
+  buildAndRender,
+  type AgentRole,
+  type ContextItem,
+  type ContextStatus,
+} from "../../lib/dcl-adapter";
 import { pdfBlobFromSpec, pdfBase64FromSpec } from "../../lib/pdf/clientPdf";
 
 type RunStatus =

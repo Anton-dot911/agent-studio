@@ -1,17 +1,19 @@
-// Dynamic Context Layer (DCL) — shared types.
+// Dynamic Context Layer (DCL) — generic core types.
 //
-// The DCL is an in-session context-management layer. It sits between the agents
-// in the existing Research → Writer → [QA ∥ Critic ∥ Implementation Architect] →
-// Revise pipeline. After each agent runs, a Context Extractor distills its output
-// into structured, reusable Context Items. Before each agent runs, a Context
-// Package Builder assembles the role-relevant, validated subset of those items and
-// injects it into the agent prompt.
+// This module is DOMAIN-AGNOSTIC. It knows nothing about any specific application,
+// its agent pipeline, its products, its blockchain or document concepts, or any
+// specific prompt. All such knowledge lives in the adapter (lib/dcl-adapter.ts)
+// and in the application's agents themselves.
 //
-// MVP scope: items live in client (run-page) state for the duration of a session.
-// There is no persistence layer yet — this is intentional (see implementation brief
-// non-goals). Everything is gated by ENABLE_DCL so the pipeline can fall back to its
-// previous behaviour with a single flag.
+// Core vocabulary (generic): context_items, agent_outputs, agent_runs, artifacts,
+// context_packages, context_snapshots. Roles and context "types" are opaque strings;
+// any domain-specific value rides along in the opaque `metadata` / `domain_tags`
+// fields and is never interpreted by the core.
+//
+// MVP scope: items live in caller state for the duration of a session. There is no
+// persistence layer yet (intentional). Everything is gated by ENABLE_DCL.
 
+// Lifecycle status of a context item — generic, not domain-specific.
 export type ContextStatus =
   | "suggested"
   | "auto_accepted"
@@ -21,93 +23,90 @@ export type ContextStatus =
   | "superseded"
   | "archived";
 
+// Generic severity scale.
 export type RiskLevel = "low" | "medium" | "high" | "critical";
 
-export type ContextType =
-  | "goal"
-  | "constraint"
-  | "decision"
-  | "risk"
-  | "assumption"
-  | "open_question"
-  | "technical_gap"
-  | "market_claim"
-  | "security_issue"
-  | "legal_issue"
-  | "formatting_issue"
-  | "source_requirement"
-  | "review_finding"
-  | "agent_instruction";
-
-export type AgentRole =
-  | "research"
-  | "writer"
-  | "qa"
-  | "critic"
-  | "implementation_architect"
-  | "revise"
-  | "final_qa";
-
-// What the Context Extractor returns per item before client-side classification.
+// What an extractor recommends before the core classifies it.
 export type RecommendedStatus = "auto_accepted" | "review_required" | "rejected_or_needs_source";
 
+// A raw suggestion (e.g. from a Context Extractor) before classification.
+// `type` and `applies_to` are opaque strings — the core never enumerates them.
 export interface SuggestedContextItem {
-  type: ContextType;
+  type: string;
   content: string;
   risk_level: RiskLevel;
   confidence: number;
   recommended_status: RecommendedStatus;
-  applies_to: AgentRole[];
+  applies_to: string[];
   reason?: string;
+  // Opaque domain payload — never interpreted by the core.
+  metadata?: Record<string, unknown>;
+  domain_tags?: string[];
 }
 
+// A stored, classified context item.
 export interface ContextItem {
   id: string;
-  type: ContextType;
+  type: string;
   content: string;
-  source_agent: AgentRole | "base";
+  source_agent: string;
   status: ContextStatus;
   risk_level: RiskLevel;
   confidence: number;
-  applies_to: AgentRole[];
+  applies_to: string[];
   reason?: string;
+  // Opaque domain payload — never interpreted by the core.
+  metadata?: Record<string, unknown>;
+  domain_tags?: string[];
   created_at: string;
 }
 
-// Base project context (Context v0) derived from the intake form.
-export interface BaseContext {
-  projectGoal: string;
-  documentType: string;
-  targetAudience: string;
-  mvpScope: string;
-  knownConstraints: string[];
-  outputRequirements: string[];
+// ── Generic model entities (req. 4) ──────────────────────────────────────────
+// Lightweight generic shapes establishing the core vocabulary. Persistence of
+// these is out of scope for the in-session MVP; they exist so adapters speak in
+// generic terms and domain data stays in metadata/domain_tags.
+
+export interface AgentOutput {
+  agent_role: string;        // opaque role name
+  output: unknown;           // raw agent output, opaque to the core
+  artifact_id?: string;
+  metadata?: Record<string, unknown>;
+  domain_tags?: string[];
+}
+
+export interface AgentRun {
+  id: string;
+  agent_role: string;
+  status: string;
+  context_package_id?: string;
+  output_artifact_id?: string;
+  created_at: string;
+  metadata?: Record<string, unknown>;
+  domain_tags?: string[];
+}
+
+export interface Artifact {
+  id: string;
+  content: unknown;          // opaque
+  created_at: string;
+  metadata?: Record<string, unknown>;
+  domain_tags?: string[];
+}
+
+export interface ContextSnapshot {
+  id: string;
+  version: number;
+  stage: string;             // opaque stage label
+  context_item_ids: string[];
+  created_at: string;
+  metadata?: Record<string, unknown>;
+  domain_tags?: string[];
 }
 
 // ── Configuration ────────────────────────────────────────────────────────────
-// The flag is read on the client (NEXT_PUBLIC_) so the run page can decide whether
-// to run the DCL steps at all. When false, the pipeline behaves exactly as before.
+// Read on the client (NEXT_PUBLIC_) so callers can decide whether to run DCL at
+// all. When false, the caller skips DCL entirely and behaves exactly as before.
 export const ENABLE_DCL =
   (process.env.NEXT_PUBLIC_ENABLE_DCL ?? "true").toLowerCase() !== "false";
 
 export const DCL_MAX_CONTEXT_ITEMS_PER_PACKAGE = 30;
-
-// Types that always carry strategic / external-claim weight and therefore must be
-// flagged for review (never silently auto-accepted) regardless of the model's vote.
-export const HIGH_IMPACT_TYPES: ReadonlySet<ContextType> = new Set<ContextType>([
-  "decision",
-  "risk",
-  "assumption",
-  "market_claim",
-  "security_issue",
-  "legal_issue",
-]);
-
-// Review-type agents that benefit from seeing unresolved / flagged context.
-export const REVIEW_ROLES: ReadonlySet<AgentRole> = new Set<AgentRole>([
-  "qa",
-  "critic",
-  "implementation_architect",
-  "revise",
-  "final_qa",
-]);
