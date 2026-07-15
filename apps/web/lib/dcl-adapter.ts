@@ -26,6 +26,18 @@ export { ENABLE_DCL } from "./dcl/types";
 export type { ContextItem, ContextStatus, SuggestedContextItem } from "./dcl/types";
 export type { ContextPackage } from "./dcl/package";
 
+// Re-export the generic gate core through the adapter, consistent with the pieces
+// above, so app code imports the gate from one place.
+export { decideGateAction } from "./dcl/gates/gate";
+export type {
+  GateDecision,
+  GateVerdict,
+  GateJudgment,
+  GateAction,
+  GateFinding,
+  GatePolicy,
+} from "./dcl/gates/types";
+
 // ── Agent Studio domain vocabulary ───────────────────────────────────────────
 export type AgentRole =
   | "research"
@@ -118,6 +130,18 @@ export function buildAndRender(base: BaseContext, items: ContextItem[], role: Ag
     outputRequirements: base.outputRequirements,
   };
   return coreBuildAndRender(ctx, items, role, PACKAGE_CONFIG);
+}
+
+// ── Final QA Gate wiring (domain side) ────────────────────────────────────────
+
+// FAIL -> revise loop cap before we force-pass. Domain supplies the number; the
+// generic loop policy consumes it via GatePolicy.maxCycles.
+export const DCL_GATE_MAX_CYCLES = Number(process.env.NEXT_PUBLIC_DCL_GATE_MAX_CYCLES ?? process.env.DCL_GATE_MAX_CYCLES ?? "2");
+
+// The acceptance criteria the gate checks the final document against. Phase 1
+// reuses the base output requirements verbatim — this is the contract to meet.
+export function finalQaAcceptanceCriteria(base: BaseContext): string[] {
+  return base.outputRequirements;
 }
 
 // Derive Context v0 (base context) from the raw Web3 intake form.

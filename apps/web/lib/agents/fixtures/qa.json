@@ -1,0 +1,13 @@
+{
+  "score": 9,
+  "status": "approved",
+  "criticalIssues": [],
+  "majorIssues": [],
+  "minorIssues": ["Cost figures are illustrative placeholders in fixture mode."],
+  "humanChecklist": [
+    "Confirm all placeholder figures are replaced before a live delivery.",
+    "Verify the persist checkpoints fired for every stage.",
+    "Confirm the gate banner renders on a forced pass."
+  ],
+  "summary": "The fixture document is complete across all ten sections and internally consistent. It is approved for driving the downstream pipeline; only illustrative figures remain."
+}

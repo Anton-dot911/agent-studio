@@ -1,0 +1,44 @@
+{
+  "projectSummary": "MockChain is a fixture project used to drive the generation pipeline deterministically with no live model calls.",
+  "problemAnalysis": {
+    "coreProblem": "Validating a multi-agent pipeline against a live model is slow and costs credits.",
+    "severity": "high",
+    "existingSolutions": ["Manual smoke tests", "Recorded HTTP cassettes"],
+    "gap": "No first-class deterministic fixture mode that exercises the gate loop and persistence without spend."
+  },
+  "marketContext": {
+    "sector": "Developer tooling (fixture / testing infrastructure)",
+    "tam": "Not applicable — internal fixture (marked estimate)",
+    "growthTrend": "n/a",
+    "keyDrivers": ["Faster CI", "Reproducible runs", "Zero-credential local testing"]
+  },
+  "competitiveAnalysis": [
+    {
+      "name": "Ad-hoc mocks",
+      "type": "inline stubs",
+      "strengths": ["Quick to write"],
+      "weaknesses": ["Drift from real shapes", "Not shared across agents"],
+      "differentiationOpportunity": "A single fixture set valid against the real parsers."
+    }
+  ],
+  "technicalLandscape": {
+    "recommendedStack": "Next.js + Netlify background functions",
+    "recommendedBlockchain": "n/a (fixture)",
+    "blockchainRationale": "No chain is used; this is a testing fixture.",
+    "keyLibraries": ["node:test"],
+    "knownRisks": ["Fixtures drifting from real output shapes"],
+    "architectureNotes": "Short-circuit each worker; keep the orchestrator unchanged."
+  },
+  "teamAssessment": {
+    "size": 1,
+    "capability": "Sufficient for a fixture-driven phase.",
+    "timelineFeasibility": "Immediate.",
+    "recommendedMvpScope": "Gate + write-only store + mock mode.",
+    "skillGaps": []
+  },
+  "redFlags": ["Fixtures must stay valid against the renderer"],
+  "opportunities": ["Reuse fixtures for CI regression tests"],
+  "sources": [{ "claim": "Fixture mode is internal and unsourced by design", "url": "https://example.com/internal-fixture" }],
+  "researchConfidence": "high",
+  "notesForWriter": "All figures here are illustrative estimates; nothing is a sourced market claim."
+}

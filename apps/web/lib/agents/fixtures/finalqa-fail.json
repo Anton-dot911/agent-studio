@@ -1,0 +1,8 @@
+{
+  "verdict": "fail",
+  "findings": [
+    { "severity": "high", "message": "A required quantitative claim is stated as fact without a source and must be sourced, softened, or removed.", "applies_to": ["Cost Estimation"] },
+    { "severity": "critical", "message": "The document contradicts itself on scope between the summary and the roadmap.", "applies_to": ["Executive Summary", "Deployment Roadmap"] }
+  ],
+  "summary": "The document has blocking defects: an unsourced hard number and an internal contradiction. It should be revised before delivery."
+}

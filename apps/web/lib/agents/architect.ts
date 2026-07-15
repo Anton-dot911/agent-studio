@@ -104,6 +104,7 @@ export interface ArchitectResult {
 }
 
 import { parseJsonLoose } from "./json-repair";
+import { maybeMock } from "./mock";
 
 interface AnthropicResponse {
   content?: { type: string; text?: string }[];
@@ -119,6 +120,9 @@ function parseJson(raw: string): unknown {
 }
 
 export async function generateArchitect(apiKey: string, input: ArchitectInput): Promise<ArchitectResult> {
+  const mock = maybeMock("architect");
+  if (mock) return mock;
+
   const { techSpec, researchReport, intakeData, documentType, contextPackage } = input;
   const startTime = Date.now();
 

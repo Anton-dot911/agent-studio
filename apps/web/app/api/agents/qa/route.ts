@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { parseJsonLoose } from "../../../../lib/agents/json-repair";
+import { serverMockEnabled, getFixture } from "../../../../lib/agents/mock";
 
 export const runtime = "edge";
 export const maxDuration = 60;
@@ -103,12 +104,40 @@ export async function POST(req: NextRequest) {
     return new Response(JSON.stringify({ error: "techSpec and researchReport are required" }), { status: 400 });
   }
 
+  const encoder = new TextEncoder();
+
+  // Mock mode: stream a deterministic fixture QA report with zero API spend.
+  if (serverMockEnabled()) {
+    const mockStream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({
+              type: "done",
+              success: true,
+              data: getFixture("qa"),
+              meta: { agentName: "qa", durationMs: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 },
+            })}\n\n`,
+          ),
+        );
+        controller.close();
+      },
+    });
+    return new Response(mockStream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+      },
+    });
+  }
+
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return new Response(JSON.stringify({ error: "ANTHROPIC_API_KEY not configured" }), { status: 500 });
   }
 
-  const encoder = new TextEncoder();
   const systemPrompt = getQAPrompt(documentType ?? "tech spec");
 
   const stream = new ReadableStream({
