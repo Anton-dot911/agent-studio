@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "node --test lib/dcl/gates/gate.test.ts lib/dcl/store.test.ts lib/dcl/persist.test.ts",
+    "test:boundary": "bash scripts/dcl-boundary-check.sh",
+    "test:all": "npm run test && npm run test:boundary"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "latest",

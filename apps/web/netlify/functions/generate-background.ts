@@ -11,6 +11,7 @@ import {
 import { generateCritic, type CriticInput } from "../../lib/agents/critic";
 import { generateResearch, type ResearchInput } from "../../lib/agents/research";
 import { generateArchitect, type ArchitectInput } from "../../lib/agents/architect";
+import { generateFinalQa, type FinalQaInput } from "../../lib/agents/finalQa";
 
 const JOBS_TABLE = "as_generation_jobs";
 
@@ -86,6 +87,8 @@ export default async (req: Request) => {
       result = await generateResearch(apiKey, job.input as ResearchInput);
     } else if (job.kind === "architect") {
       result = await generateArchitect(apiKey, job.input as ArchitectInput);
+    } else if (job.kind === "final_qa") {
+      result = await generateFinalQa(apiKey, job.input as FinalQaInput);
     } else {
       result = await generateRevise(apiKey, job.input as ReviseInput);
     }

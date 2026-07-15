@@ -1,0 +1,8 @@
+{
+  "verdict": "pass_with_minor_fixes",
+  "findings": [
+    { "severity": "low", "message": "Cost tables use illustrative placeholder values that a live delivery should replace.", "applies_to": ["Cost Estimation"] },
+    { "severity": "medium", "message": "The executive summary could state explicitly that all figures are fixtures.", "applies_to": ["Executive Summary"] }
+  ],
+  "summary": "The document is deliverable. The remaining items are non-blocking polish that does not justify another revise cycle."
+}

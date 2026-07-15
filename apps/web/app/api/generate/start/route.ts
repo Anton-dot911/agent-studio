@@ -21,8 +21,8 @@ export async function POST(req: NextRequest) {
   }
 
   const { kind, input, paymentTxHash } = body;
-  if (kind !== "writer" && kind !== "revise" && kind !== "critic" && kind !== "research" && kind !== "architect") {
-    return NextResponse.json({ error: "kind must be 'writer', 'critic', 'revise', 'research', or 'architect'" }, { status: 400 });
+  if (kind !== "writer" && kind !== "revise" && kind !== "critic" && kind !== "research" && kind !== "architect" && kind !== "final_qa") {
+    return NextResponse.json({ error: "kind must be 'writer', 'critic', 'revise', 'research', 'architect', or 'final_qa'" }, { status: 400 });
   }
   if (!input || typeof input !== "object") {
     return NextResponse.json({ error: "input is required" }, { status: 400 });

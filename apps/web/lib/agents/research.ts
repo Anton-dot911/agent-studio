@@ -3,6 +3,7 @@
 // no edge-function timeout to worry about even with web search enabled.
 
 import type { GenerationResult } from "./generate";
+import { maybeMock } from "./mock";
 
 const RESEARCH_MODEL = "claude-sonnet-4-6";
 const PRICE_INPUT_PER_M = 3;
@@ -48,6 +49,9 @@ interface AnthropicResponse {
 }
 
 export async function generateResearch(apiKey: string, input: ResearchInput): Promise<GenerationResult> {
+  const mock = maybeMock("research");
+  if (mock) return mock;
+
   const { intakeData } = input;
   const startTime = Date.now();
 

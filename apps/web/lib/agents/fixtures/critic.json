@@ -1,0 +1,28 @@
+{
+  "verdict": {
+    "ready": true,
+    "score": 8,
+    "bestUse": "developer handoff",
+    "biggestRisk": "Fixture content is illustrative and not grounded in a real project.",
+    "decision": "APPROVE_FOR_DEVELOPER_HANDOFF_AFTER_FIXES",
+    "decisionRationale": "The document is internally consistent and complete for a fixture. It intentionally carries no unsupported market numbers. It is suitable for exercising the downstream pipeline. Minor polish only."
+  },
+  "attacks": [
+    {
+      "title": "Illustrative figures",
+      "severity": "low",
+      "raisedBy": "investor",
+      "problem": "Cost tables use placeholder values.",
+      "whyItMatters": "A real deliverable would need sourced numbers.",
+      "evidence": "Cost Estimation section uses $0.00 for mock stages.",
+      "fix": "In live mode, replace placeholders with sourced estimates."
+    }
+  ],
+  "unsupportedClaims": [],
+  "contradictions": [],
+  "trustRisks": [],
+  "missingSections": [],
+  "revisionBrief": [
+    { "instruction": "Clarify that all figures are illustrative fixtures.", "reason": "Avoids implying grounded numbers.", "priority": "low" }
+  ]
+}

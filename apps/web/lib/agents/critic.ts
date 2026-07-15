@@ -156,6 +156,7 @@ export interface CriticResult {
 }
 
 import { parseJsonLoose } from "./json-repair";
+import { maybeMock } from "./mock";
 
 interface AnthropicResponse {
   content?: { type: string; text?: string }[];
@@ -171,6 +172,9 @@ function parseJson(raw: string): unknown {
 }
 
 export async function generateCritic(apiKey: string, input: CriticInput): Promise<CriticResult> {
+  const mock = maybeMock("critic");
+  if (mock) return mock;
+
   const { techSpec, researchReport, intakeData, documentType, targetAudience, qualityStandard, contextPackage } = input;
   const startTime = Date.now();
 

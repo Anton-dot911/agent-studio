@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { PayAndGenerate } from "../../components/PayAndGenerate";
 // Agent Studio talks to the DCL only through the adapter (lib/dcl-adapter), which
@@ -10,11 +10,24 @@ import {
   seedBaseContextItems,
   baseContextFromIntake,
   buildAndRender,
+  decideGateAction,
+  finalQaAcceptanceCriteria,
+  DCL_GATE_MAX_CYCLES,
   type AgentRole,
   type ContextItem,
   type ContextStatus,
+  type GateDecision,
+  type GateJudgment,
 } from "../../lib/dcl-adapter";
+import { getFixture, getFinalQaFixture } from "../../lib/agents/mock";
 import { pdfBlobFromSpec, pdfBase64FromSpec } from "../../lib/pdf/clientPdf";
+
+// Client-side mock switches (mirror the server AS_MOCK / DCL_GATE_MOCK_VERDICT).
+// When on, the orchestrator returns fixtures directly and skips the job plumbing,
+// so a full cycle runs with no Anthropic and no Supabase job storage.
+const AS_MOCK_CLIENT = process.env.NEXT_PUBLIC_AS_MOCK === "1";
+const GATE_MOCK_VERDICT = process.env.NEXT_PUBLIC_DCL_GATE_MOCK_VERDICT;
+const ZERO_META = { agentName: "mock", durationMs: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 };
 
 type RunStatus =
   | "idle"
@@ -26,6 +39,8 @@ type RunStatus =
   | "qa_checking"
   | "qa_done"
   | "revising"
+  | "final_qa_checking"
+  | "gate_done"
   | "delivering"
   | "delivered";
 
@@ -136,6 +151,13 @@ export default function RunPage() {
   // ── Dynamic Context Layer (in-session) ───────────────────────────────────────
   const [contextItems, setContextItems] = useState<ContextItem[]>([]);
   const [architectReport, setArchitectReport] = useState<Record<string, unknown> | null>(null);
+  // Final QA Gate state. gateCycle counts how many times the gate has run this
+  // generation; gateDecision is the last deterministic decision (drives the banner).
+  const [gateCycle, setGateCycle] = useState(0);
+  const [gateDecision, setGateDecision] = useState<GateDecision | null>(null);
+  // Context Store: one generationId per pipeline run + a monotonic snapshot version.
+  const generationIdRef = useRef<string>("");
+  const versionRef = useRef<number>(0);
 
   const set = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }));
 
@@ -173,6 +195,38 @@ export default function RunPage() {
       return undefined;
     }
   };
+
+  // ── Context Store write path (best-effort, never blocks generation) ──────────
+  // All durability goes through the server route (the browser can't hold the
+  // service-role key). Failures here are swallowed: a paying client must still get
+  // the document even if persistence is down or unconfigured.
+  const persist = async (batch: {
+    items?: ContextItem[];
+    run?: Record<string, unknown>;
+    artifact?: Record<string, unknown>;
+    snapshot?: Record<string, unknown>;
+  }) => {
+    if (!ENABLE_DCL) return;
+    const generationId = generationIdRef.current;
+    if (!generationId) return;
+    try {
+      await fetch("/api/dcl/persist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ generationId, ...batch }),
+      });
+    } catch (e) {
+      console.error("[dcl] persist failed (non-fatal):", e);
+    }
+  };
+
+  const makeSnapshot = (stage: string, version: number, items: ContextItem[]) => ({
+    id: crypto.randomUUID(),
+    version,
+    stage,
+    context_item_ids: items.map(i => i.id),
+    created_at: new Date().toISOString(),
+  });
 
   // User override on a suggested context item (optional — auto-accept means the
   // pipeline never waits on this, but the user can still correct the engine).
@@ -235,10 +289,20 @@ export default function RunPage() {
   // so they can produce a full-quality document without hitting the request timeout.
   // We start the job, then poll its status in Supabase until it finishes.
   const runJob = async (
-    kind: "writer" | "revise" | "critic" | "research" | "architect",
+    kind: "writer" | "revise" | "critic" | "research" | "architect" | "final_qa",
     input: object,
     paymentTxHash?: string
   ): Promise<{ data: Record<string, unknown>; meta: Record<string, unknown> }> => {
+    // Client mock bypass: skip the entire job plumbing (start -> background -> poll),
+    // so a full cycle needs neither Anthropic nor Supabase. Deterministic fixtures.
+    if (AS_MOCK_CLIENT) {
+      const data =
+        kind === "final_qa"
+          ? getFinalQaFixture(GATE_MOCK_VERDICT)
+          : getFixture(kind);
+      return { data: data as Record<string, unknown>, meta: { ...ZERO_META, agentName: kind } };
+    }
+
     const startRes = await fetch("/api/generate/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -277,6 +341,10 @@ export default function RunPage() {
     if (!form.projectName) { setError("Enter a project name to continue"); return; }
     setStatus("running"); setResearchResult(null); setSpec(null); setQaReport(null); setCriticReport(null); setError(""); setMeta(null); setWasRevised(false); setIsPaid(false);
     setContextItems([]); setArchitectReport(null);
+    setGateDecision(null); setGateCycle(0);
+    // Mint one generationId for the whole run; reset the snapshot version counter.
+    generationIdRef.current = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}`;
+    versionRef.current = 0;
     const timer = startTimer(s => setElapsed(s));
     try {
       const { data, meta } = await runJob("research", { intakeData: form });
@@ -287,7 +355,11 @@ export default function RunPage() {
       if (ENABLE_DCL) {
         const baseItems = seedBaseContextItems(baseContextFromIntake(form), new Date().toISOString());
         const researchItems = await runExtract(data, "research");
-        setContextItems([...baseItems, ...researchItems]);
+        const seeded = [...baseItems, ...researchItems];
+        setContextItems(seeded);
+        // Checkpoint S (seed): persist the seed items + a version-0 snapshot.
+        versionRef.current = 0;
+        await persist({ items: seeded, snapshot: makeSnapshot("seed", 0, seeded) });
       }
       setStatus("done");
     } catch (e) {
@@ -312,7 +384,11 @@ export default function RunPage() {
       // DCL: extract context from the draft for the review agents that follow.
       if (ENABLE_DCL) {
         const writerItems = await runExtract(data, "writer");
-        if (writerItems.length > 0) setContextItems(prev => [...prev, ...writerItems]);
+        const all = [...contextItems, ...writerItems];
+        if (writerItems.length > 0) setContextItems(all);
+        // Checkpoint W (writer): persist new items + a version-1 snapshot.
+        versionRef.current = 1;
+        await persist({ items: writerItems, snapshot: makeSnapshot("writer", 1, all) });
       }
       setStatus("document");
     } catch (e) {
@@ -336,7 +412,10 @@ export default function RunPage() {
       const criticPackage = packageFor("critic", contextItems);
       const architectPackage = packageFor("implementation_architect", contextItems);
 
-      const qaPromise = fetchSSE("/api/agents/qa", { techSpec: spec, researchReport: researchResult, documentType: form.documentNeeds, contextPackage: qaPackage });
+      // Client mock: skip the SSE call and use the QA fixture directly.
+      const qaPromise = AS_MOCK_CLIENT
+        ? Promise.resolve({ data: getFixture("qa") as Record<string, unknown>, meta: { ...ZERO_META, agentName: "qa" } })
+        : fetchSSE("/api/agents/qa", { techSpec: spec, researchReport: researchResult, documentType: form.documentNeeds, contextPackage: qaPackage });
       const criticPromise = runJob("critic", {
         techSpec: spec,
         researchReport: researchResult,
@@ -381,7 +460,11 @@ export default function RunPage() {
           architectOut?.data ? runExtract(architectOut.data, "implementation_architect") : Promise.resolve([]),
         ]);
         const merged = [...qaItems, ...criticItems, ...architectItems];
-        if (merged.length > 0) setContextItems(prev => [...prev, ...merged]);
+        const all = [...contextItems, ...merged];
+        if (merged.length > 0) setContextItems(all);
+        // Checkpoint R (reviewers): persist new items + a version-2 snapshot.
+        versionRef.current = 2;
+        await persist({ items: merged, snapshot: makeSnapshot("review", 2, all) });
       }
       setStatus("qa_done");
     } catch (e) {
@@ -392,24 +475,111 @@ export default function RunPage() {
   };
 
   // ── Step 3b: Revise ────────────────────────────────────────────────────────
-  const runRevise = async () => {
+  // Core revise: revises `inputSpec`, updates state, persists Checkpoint V, and
+  // returns the revised document (or null on failure). Does NOT set a terminal
+  // status — the caller (manual button or the gate loop) decides what comes next.
+  const runReviseCore = async (inputSpec: TechSpec | null): Promise<TechSpec | null> => {
     setStatus("revising"); setError("");
     const timer = startTimer(s => setElapsed(s));
     try {
       // DCL: the Reviser gets a validated package (constraints + accepted findings)
       // plus the structured Critic and Implementation Architect reports.
       const contextPackage = packageFor("revise", contextItems);
-      const { data, meta } = await runJob("revise", { techSpec: spec, qaReport, criticReport, architectReport, intakeData: form, documentType: form.documentNeeds, contextPackage });
+      const { data, meta } = await runJob("revise", { techSpec: inputSpec, qaReport, criticReport, architectReport, intakeData: form, documentType: form.documentNeeds, contextPackage });
       timer.stop();
-      setSpec(data as unknown as TechSpec);
+      const revised = data as unknown as TechSpec;
+      setSpec(revised);
       setQaReport(null);
       setMeta({ costUsd: (meta.costUsd as number) ?? 0, tokens: ((meta.inputTokens as number) ?? 0) + ((meta.outputTokens as number) ?? 0) });
       setWasRevised(true);
-      setStatus("document");
+      // Checkpoint V (revise): snapshot at a new version + the revised doc as artifact.
+      if (ENABLE_DCL) {
+        const v = ++versionRef.current;
+        await persist({
+          snapshot: makeSnapshot("revise", v, contextItems),
+          artifact: { id: crypto.randomUUID(), content: revised, created_at: new Date().toISOString(), metadata: { stage: "revise", version: v } },
+        });
+      }
+      return revised;
     } catch (e) {
       timer.stop();
       setError(e instanceof Error ? e.message : "Revision failed. Try again.");
       setStatus("qa_done");
+      return null;
+    }
+  };
+
+  // Manual revise entrypoint (the "apply revision" button). Revises the current spec,
+  // then hands off to the Final QA Gate when DCL is enabled.
+  const runRevise = async () => {
+    const revised = await runReviseCore(spec);
+    if (!revised) return;
+    if (ENABLE_DCL) await runFinalQa(revised, 0);
+    else setStatus("document");
+  };
+
+  // ── Step 4: Final QA Gate ───────────────────────────────────────────────────
+  // Runs the Opus gatekeeper on the final document, maps the judgment through the
+  // generic loop policy, and branches: revise (loop) or deliver / deliver_with_warning
+  // (stop). The loop guard in decideGateAction guarantees termination at the cap,
+  // where it force-passes so a paying client is never blocked (D2). `cycle` is passed
+  // explicitly to avoid React stale-closure bugs across the recursive loop.
+  const runFinalQa = async (specToJudge: TechSpec, cycle: number): Promise<void> => {
+    if (!ENABLE_DCL) { setStatus("document"); return; }
+    setStatus("final_qa_checking"); setGateCycle(cycle); setError("");
+    const timer = startTimer(s => setElapsed(s));
+    try {
+      const base = baseContextFromIntake(form);
+      const finalPackage = packageFor("final_qa", contextItems);
+      const unresolvedFlags = contextItems
+        .filter(i => i.status === "review_required")
+        .map(i => i.content);
+
+      const { data, meta } = await runJob("final_qa", {
+        techSpec: specToJudge,
+        intakeData: form,
+        documentType: form.documentNeeds,
+        researchReport: researchResult,
+        acceptanceCriteria: finalQaAcceptanceCriteria(base),
+        unresolvedFlags,
+        contextPackage: finalPackage,
+      });
+      timer.stop();
+
+      const judgment = data as unknown as GateJudgment;
+      const decision = decideGateAction(judgment, cycle, { maxCycles: DCL_GATE_MAX_CYCLES });
+      setGateDecision(decision);
+      setMeta({ costUsd: (meta.costUsd as number) ?? 0, tokens: ((meta.inputTokens as number) ?? 0) + ((meta.outputTokens as number) ?? 0) });
+
+      // Checkpoint G (gate): agent_run(status=verdict) + judgment artifact + snapshot.
+      if (ENABLE_DCL) {
+        const v = ++versionRef.current;
+        const artifactId = crypto.randomUUID();
+        await persist({
+          run: { id: crypto.randomUUID(), agent_role: "final_qa", status: decision.verdict, output_artifact_id: artifactId, created_at: new Date().toISOString(), metadata: { cycle, action: decision.action, forcePassed: decision.forcePassed } },
+          artifact: { id: artifactId, content: judgment as unknown as Record<string, unknown>, created_at: new Date().toISOString(), metadata: { stage: "gate", version: v, cycle } },
+          snapshot: makeSnapshot("gate", v, contextItems),
+        });
+      }
+
+      if (decision.action === "revise") {
+        const revised = await runReviseCore(specToJudge);
+        if (revised) {
+          await runFinalQa(revised, cycle + 1); // re-gate; loop guard guarantees termination
+        } else {
+          // Revise failed — do not block delivery; the prior document stands.
+          setStatus("gate_done");
+        }
+        return;
+      }
+
+      // deliver | deliver_with_warning: the document is releasable, stop here.
+      setStatus("gate_done");
+    } catch (e) {
+      timer.stop();
+      // The gate must never block delivery (D2): fall through to a deliverable state.
+      console.error("[gate] final QA failed (non-fatal):", e);
+      setStatus("gate_done");
     }
   };
 
@@ -494,15 +664,21 @@ export default function RunPage() {
   };
 
   // ── Document view (with QA toolbar) ───────────────────────────────────────
-  if ((status === "document" || status === "qa_checking" || status === "qa_done" || status === "revising" || status === "delivering" || status === "delivered") && spec) {
+  if ((status === "document" || status === "qa_checking" || status === "qa_done" || status === "revising" || status === "final_qa_checking" || status === "gate_done" || status === "delivering" || status === "delivered") && spec) {
     const showQABar = (status === "document" || status === "qa_checking") && !wasRevised;
     const showQAResult = status === "qa_done" || status === "revising" || status === "delivered" || status === "delivering";
-    const canDownloadPdf = wasRevised || (qaReport !== null && qaReport.score >= 9);
+    // Once the gate has produced a decision the document is deliverable in every
+    // deliver* case (including a forced pass) — Download must never be disabled (D2).
+    const gateDelivered = status === "gate_done" || gateDecision !== null;
+    const canDownloadPdf = wasRevised || gateDelivered || (qaReport !== null && qaReport.score >= 9);
     // The document is ready to send to the client only once it is final: either a
     // revision has been applied, or QA approved it (score >= 9). Delivery must NOT be
     // offered on an un-revised draft that QA flagged for revision, and it MUST remain
     // available after a revision (when qaReport is cleared). Persist through delivery.
-    const documentReady = wasRevised || (qaReport !== null && qaReport.score >= 9);
+    const documentReady = wasRevised || gateDelivered || (qaReport !== null && qaReport.score >= 9);
+    // Gate warning banner: shown for deliver_with_warning (incl. forced pass).
+    const showGateWarning = gateDecision !== null && gateDecision.action === "deliver_with_warning";
+    const gateChecking = status === "final_qa_checking";
 
     const qaColor = qaReport
       ? qaReport.score >= 8 ? "var(--green)" : qaReport.score >= 6 ? "#f59e0b" : "#ef4444"
@@ -586,6 +762,42 @@ export default function RunPage() {
             <div style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 12, padding: "12px 16px", marginBottom: 14, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
               <p style={{ fontSize: 13, color: "#ef4444", lineHeight: 1.5, margin: 0 }}>{error}</p>
               <button onClick={() => setError("")} style={{ fontSize: 20, lineHeight: 1, background: "none", border: "none", cursor: "pointer", color: "#ef4444", flexShrink: 0, padding: 0 }}>×</button>
+            </div>
+          )}
+
+          {/* Final QA Gate — in-progress indicator */}
+          {gateChecking && (
+            <div className="dcl-panel" style={{ background: "rgba(33,37,102,0.06)", border: "1px solid rgba(33,37,102,0.18)", borderRadius: 12, padding: "12px 16px", marginBottom: 14, display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid var(--accent)", borderTopColor: "transparent", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
+              <p style={{ fontSize: 13, color: "var(--text)", margin: 0 }}>Final QA Gate — acceptance check{gateCycle > 0 ? ` (cycle ${gateCycle + 1})` : ""}… {elapsed}s</p>
+            </div>
+          )}
+
+          {/* Final QA Gate — non-blocking warning banner (deliver_with_warning /
+              forced pass). Download stays enabled in all deliver* cases (D2). */}
+          {showGateWarning && gateDecision && (
+            <div className="dcl-panel" style={{ background: "rgba(245,158,11,0.09)", border: "1px solid rgba(245,158,11,0.35)", borderRadius: 12, padding: "14px 16px", marginBottom: 14 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 6 }}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: "#b45309", margin: 0 }}>
+                  {gateDecision.forcePassed
+                    ? `Final QA Gate — delivered with a warning after ${DCL_GATE_MAX_CYCLES} revise cycle${DCL_GATE_MAX_CYCLES === 1 ? "" : "s"}`
+                    : "Final QA Gate — delivered with minor notes"}
+                </p>
+                <span style={{ fontSize: 11, color: "#b45309", fontWeight: 700, whiteSpace: "nowrap" }}>{gateDecision.verdict.replace(/_/g, " ")}</span>
+              </div>
+              <p style={{ fontSize: 12.5, color: "var(--text)", lineHeight: 1.55, margin: 0 }}>{gateDecision.summary}</p>
+              {gateDecision.findings.filter(f => f.severity === "high" || f.severity === "critical").length > 0 && (
+                <ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>
+                  {gateDecision.findings
+                    .filter(f => f.severity === "high" || f.severity === "critical")
+                    .map((f, i) => (
+                      <li key={i} style={{ fontSize: 12, color: "var(--text)", lineHeight: 1.5 }}>
+                        <strong style={{ textTransform: "uppercase", fontSize: 10, letterSpacing: "1px", color: "#b45309" }}>{f.severity}</strong> — {f.message}
+                      </li>
+                    ))}
+                </ul>
+              )}
+              <p style={{ fontSize: 11.5, color: "var(--dim)", marginTop: 8 }}>This document is releasable — Download and Send are available below.</p>
             </div>
           )}
 

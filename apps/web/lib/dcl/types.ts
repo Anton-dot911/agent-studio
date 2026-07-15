@@ -1,7 +1,7 @@
 // Dynamic Context Layer (DCL) — generic core types.
 //
 // This module is DOMAIN-AGNOSTIC. It knows nothing about any specific application,
-// its agent pipeline, its products, its blockchain or document concepts, or any
+// its agent pipeline, its products, its industry or deliverable concepts, or any
 // specific prompt. All such knowledge lives in the adapter (lib/dcl-adapter.ts)
 // and in the application's agents themselves.
 //

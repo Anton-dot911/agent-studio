@@ -8,6 +8,7 @@
 // the client tracks progress by polling the job status in Supabase.
 
 import { parseJsonLoose } from "./json-repair";
+import { maybeMock } from "./mock";
 
 // Writer and Reviser both run on Sonnet 4.6 (same model that does QA) for quality.
 export const GENERATION_MODEL = "claude-sonnet-4-6";
@@ -229,6 +230,9 @@ export interface WriterInput {
 }
 
 export async function generateWriter(apiKey: string, input: WriterInput): Promise<GenerationResult> {
+  const mock = maybeMock("writer");
+  if (mock) return mock;
+
   const { intakeData, researchReport, checklistItems, contextPackage } = input;
   const startTime = Date.now();
   const system = getWriterSystemPrompt(intakeData.documentNeeds ?? "tech spec");
@@ -287,6 +291,9 @@ export interface ReviseInput {
 }
 
 export async function generateRevise(apiKey: string, input: ReviseInput): Promise<GenerationResult> {
+  const mock = maybeMock("revise");
+  if (mock) return mock;
+
   const { techSpec, qaReport, criticReport, architectReport, intakeData, documentType, contextPackage } = input;
   const startTime = Date.now();
 

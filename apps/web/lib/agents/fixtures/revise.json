@@ -1,0 +1,76 @@
+{
+  "title": "MockChain Technical Specification",
+  "subtitle": "Revised fixture document — visibly distinct from the writer draft so a revise pass is observable.",
+  "sections": [
+    {
+      "label": "Executive Summary",
+      "blocks": [
+        { "type": "para", "text": "REVISED: MockChain is a fixture project used to drive the full generation pipeline without any model calls. This revision demonstrates that the reviser stage replaced the draft, so the gate re-runs against updated content." },
+        { "type": "highlight", "label": "Key Takeaway", "text": "This is the revised copy: mock revise runs are reproducible and clearly differ from the first draft." }
+      ]
+    },
+    {
+      "label": "Problem Statement",
+      "blocks": [
+        { "type": "para", "text": "Testing a multi-agent pipeline against a live model is slow and costs credits. Teams need a way to validate orchestration, the QA gate loop, and persistence without spending on inference." },
+        { "type": "bullets", "items": ["Live runs cost money per stage", "Non-determinism makes regressions hard to reproduce", "Credentials are required just to smoke-test the flow", "Revised: the reviser addressed every checklist item"] }
+      ]
+    },
+    {
+      "label": "Solution Architecture",
+      "blocks": [
+        { "type": "para", "text": "A fixture mode short-circuits each agent to return a canned result, so the orchestrator runs unchanged while the model is never called. The gate reads a configured verdict to make the loop deterministic." },
+        { "type": "highlight", "label": "Design", "text": "Fixtures are valid against the same parsers real outputs use, so a mock run renders a real PDF." }
+      ]
+    },
+    {
+      "label": "Data Model",
+      "blocks": [
+        { "type": "para", "text": "The Context Store groups every write under a single generation id and records items, runs, artifacts, and snapshots. Domain data rides in opaque metadata and tags." },
+        { "type": "table", "headers": ["Entity", "Key", "Purpose"], "rows": [["context_item", "generation_id + id", "validated context"], ["snapshot", "generation_id + version", "point-in-time item set"], ["artifact", "generation_id + id", "opaque output"]] }
+      ]
+    },
+    {
+      "label": "Backend and API Specification",
+      "blocks": [
+        { "type": "para", "text": "A single persist endpoint accepts a batch of any subset of writes for one generation id and returns an acknowledgement. Failures are non-fatal so generation never blocks on durability." },
+        { "type": "bullets", "items": ["POST /api/dcl/persist accepts items, run, artifact, snapshot", "Best-effort writes: errors are logged and swallowed", "Store selected by an environment flag"] }
+      ]
+    },
+    {
+      "label": "Frontend Integration",
+      "blocks": [
+        { "type": "para", "text": "The orchestrator mints one generation id at the start of a run and threads it through every checkpoint. In mock mode the client returns fixtures directly and skips the job plumbing." },
+        { "type": "highlight", "label": "Note", "text": "The download button stays enabled in every deliverable state." }
+      ]
+    },
+    {
+      "label": "Security Considerations",
+      "blocks": [
+        { "type": "para", "text": "The service-role key never reaches the browser; all durable writes go through a server route. Mock mode needs no credentials at all, reducing the blast radius of local testing." },
+        { "type": "bullets", "items": ["Server-only secrets", "Read path deferred to a later phase", "No third-party client library that opens sockets at import"] }
+      ]
+    },
+    {
+      "label": "Testing Strategy",
+      "blocks": [
+        { "type": "para", "text": "The loop policy is a pure function with a full decision-table unit test. The store has a round-trip test, and the persist path is covered without a live backend." },
+        { "type": "highlight", "label": "Coverage", "text": "Deterministic verdicts let a single run prove the force-pass path terminates." }
+      ]
+    },
+    {
+      "label": "Deployment Roadmap",
+      "blocks": [
+        { "type": "para", "text": "Phase 1 ships the gate, the write-only store, and mock mode. Phase 2 adds the cross-session read path without any schema change." },
+        { "type": "table", "headers": ["Phase", "Timeline", "Scope"], "rows": [["1", "now", "gate + store write + mock"], ["2", "next", "read path + retrieval"]] }
+      ]
+    },
+    {
+      "label": "Cost Estimation",
+      "blocks": [
+        { "type": "para", "text": "Mock runs cost nothing. Live runs bill per stage at each model's published rate; the gate defaults to the most capable judge and can be switched to a cheaper one." },
+        { "type": "table", "headers": ["Stage", "Mock Cost", "Live Cost"], "rows": [["writer", "$0.00", "per model rate"], ["gate", "$0.00", "per model rate"], ["total", "$0.00", "sum of stages"]] }
+      ]
+    }
+  ]
+}
