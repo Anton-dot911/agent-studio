@@ -21,6 +21,7 @@ import {
 } from "../../lib/dcl-adapter";
 import { getFixture, getFinalQaFixture } from "../../lib/agents/mock";
 import { pdfBlobFromSpec, pdfBase64FromSpec } from "../../lib/pdf/clientPdf";
+import { NETWORK_LABEL } from "../../lib/network";
 
 // Client-side mock switches (mirror the server AS_MOCK / DCL_GATE_MOCK_VERDICT).
 // When on, the orchestrator returns fixtures directly and skips the job plumbing,
@@ -1114,7 +1115,7 @@ export default function RunPage() {
             <div style={{ ...card, padding: "20px 22px", marginBottom: 18, border: "1.5px solid rgba(15,18,64,0.06)" }}>
               <p style={{ fontSize: 10, letterSpacing: "3px", textTransform: "uppercase", color: "var(--accent)", marginBottom: 8, fontWeight: 700 }}>Step 2</p>
               <p style={{ fontSize: 17, fontWeight: 700, color: "var(--bright)", marginBottom: 4 }}>Generate full document</p>
-              <p style={{ fontSize: 12.5, color: "var(--dim)", lineHeight: 1.5, marginBottom: 16 }}>Writer → QA → Revise → PDF. One-time payment of <strong>$1 USDC</strong> on Base Sepolia.</p>
+              <p style={{ fontSize: 12.5, color: "var(--dim)", lineHeight: 1.5, marginBottom: 16 }}>Writer → QA → Revise → PDF. One-time payment of <strong>$1 USDC</strong> on {NETWORK_LABEL}.</p>
               <PayAndGenerate
                 disabled={!form.projectName}
                 onPaid={(txHash) => { setIsPaid(true); void runWriter(txHash); }}
