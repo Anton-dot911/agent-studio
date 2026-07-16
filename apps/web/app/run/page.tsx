@@ -670,12 +670,15 @@ export default function RunPage() {
     // Once the gate has produced a decision the document is deliverable in every
     // deliver* case (including a forced pass) — Download must never be disabled (D2).
     const gateDelivered = status === "gate_done" || gateDecision !== null;
-    const canDownloadPdf = wasRevised || gateDelivered || (qaReport !== null && qaReport.score >= 9);
-    // The document is ready to send to the client only once it is final: either a
-    // revision has been applied, or QA approved it (score >= 9). Delivery must NOT be
-    // offered on an un-revised draft that QA flagged for revision, and it MUST remain
-    // available after a revision (when qaReport is cleared). Persist through delivery.
-    const documentReady = wasRevised || gateDelivered || (qaReport !== null && qaReport.score >= 9);
+    // When DCL is ON, the Final QA Gate is a MANDATORY step before delivery (spec 2.6):
+    // Download and Send unlock only after the gate returns a deliver decision — a
+    // QA-approved (score>=9) or merely revised draft is NOT deliverable until it has
+    // passed the gate. When DCL is OFF, keep the original pre-DCL behaviour so the
+    // manual flow is not regressed (QA score>=9, or a completed manual revision).
+    const canDownloadPdf = ENABLE_DCL
+      ? gateDelivered
+      : (wasRevised || (qaReport !== null && qaReport.score >= 9));
+    const documentReady = canDownloadPdf;
     // Gate warning banner: shown for deliver_with_warning (incl. forced pass).
     const showGateWarning = gateDecision !== null && gateDecision.action === "deliver_with_warning";
     const gateChecking = status === "final_qa_checking";
@@ -846,11 +849,22 @@ export default function RunPage() {
                 </div>
               )}
 
-              {/* score >= 9: ready, show Download PDF */}
-              {qaReport.score >= 9 && (
-                <button onClick={downloadPdf} disabled={downloading} style={{ width: "100%", padding: "14px 18px", borderRadius: 50, background: "var(--green)", color: "#fff", border: "none", cursor: downloading ? "default" : "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 14, boxShadow: "0 4px 16px rgba(16,185,129,0.30)", marginBottom: 14 }}>
-                  {downloading ? "Generating PDF…" : "Download PDF"}
-                </button>
+              {/* score >= 9: QA approved. With DCL the document must still clear the
+                  mandatory Final QA Gate before delivery (spec 2.6); without DCL it is
+                  ready to download immediately (original behaviour). */}
+              {qaReport.score >= 9 && status === "qa_done" && (
+                ENABLE_DCL ? (
+                  <div style={{ marginBottom: 14 }}>
+                    <button onClick={() => { if (spec) runFinalQa(spec, 0); }} style={{ width: "100%", padding: "14px 18px", borderRadius: 50, background: "var(--accent)", color: "#fff", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 14, boxShadow: "0 4px 16px rgba(33,37,102,0.28)" }}>
+                      Run Final QA Gate →
+                    </button>
+                    <p style={{ fontSize: 11, color: "var(--dim)", marginTop: 6, textAlign: "center" }}>Opus acceptance check before the client receives the document</p>
+                  </div>
+                ) : (
+                  <button onClick={downloadPdf} disabled={downloading} style={{ width: "100%", padding: "14px 18px", borderRadius: 50, background: "var(--green)", color: "#fff", border: "none", cursor: downloading ? "default" : "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 14, boxShadow: "0 4px 16px rgba(16,185,129,0.30)", marginBottom: 14 }}>
+                    {downloading ? "Generating PDF…" : "Download PDF"}
+                  </button>
+                )
               )}
 
               {/* score < 9: show Checklist + Revise button */}
@@ -1071,10 +1085,10 @@ export default function RunPage() {
           </p>
           {/* Pipeline progress */}
           <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 32 }}>
-            {["Research", "Writer", "QA", "Deliver"].map((step, i) => (
+            {(ENABLE_DCL ? ["Research", "Writer", "QA", "Final QA", "Deliver"] : ["Research", "Writer", "QA", "Deliver"]).map((step, i, arr) => (
               <div key={step} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <div style={{ padding: "5px 12px", borderRadius: 8, fontSize: 11, fontWeight: 600, background: (status === "running" && i === 0) || (status === "writing" && i === 1) ? "var(--accent)" : "var(--card)", color: (status === "running" && i === 0) || (status === "writing" && i === 1) ? "#fff" : "var(--dim)", boxShadow: "var(--nm-out-sm)" }}>{step}</div>
-                {i < 3 && <span style={{ color: "var(--dim)", fontSize: 12 }}>→</span>}
+                {i < arr.length - 1 && <span style={{ color: "var(--dim)", fontSize: 12 }}>→</span>}
               </div>
             ))}
           </div>
