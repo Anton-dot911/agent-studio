@@ -81,7 +81,7 @@ stage:    seed -> writer -> review -> revise -> gate (stop)
 
 Both traces are reproducible: set AS_MOCK=1, DCL_STORE=memory (or supabase),
 DCL_GATE_MOCK_VERDICT=fail|pass and run a generation. No Anthropic or
-Supabase credentials are required in memory mode. See MOCK.md.
+Supabase credentials are required in memory mode. See [MOCK.md](../apps/web/MOCK.md).
 
 ## Architecture: a clean boundary
 
