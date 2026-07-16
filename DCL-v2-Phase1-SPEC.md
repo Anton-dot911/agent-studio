@@ -227,7 +227,13 @@ allowlist of kinds, add "final_qa").
 
 ### 2.6 Orchestrator integration: app/run/page.tsx
 
-Add a Step 4 (Final QA Gate) that runs after revise and BEFORE download/deliver.
+Add a Step 4 (Final QA Gate) that runs UNCONDITIONALLY before download/deliver:
+after Revise when Revise ran, directly after the review stage when it did not.
+No path may reach download/deliver without a GateDecision.
+
+AMENDMENT (approved): Revise trigger is: numeric QA score < 9.2 (parse the score as a
+number, never compare as strings; with integer scores this means 9 -> revise, 10 -> skip).
+Revise also runs whenever the gate returns action="revise", regardless of score.
 
 State to add:
 - gateCycle: number (0 initially; increment each time the gate runs)
@@ -423,7 +429,9 @@ Write (best-effort, awaited but caught) at these checkpoints:
 - Checkpoint S (seed): after seedBaseContextItems -> persist items + snapshot(stage="seed", version=0).
 - Checkpoint W (writer): after writer extract merge -> persist new items + snapshot(stage="writer", v=1).
 - Checkpoint R (reviewers): after qa/critic/architect extract merge -> persist new items + snapshot(stage="review", v=2).
-- Checkpoint V (revise): after each revise -> persist snapshot(stage="revise", v++) (+ artifact = revised doc, optional).
+- Checkpoint V (revise): CONDITIONAL -- written only when Revise actually ran ->
+  persist snapshot(stage="revise", v++) (+ artifact = revised doc, optional).
+- Checkpoint G is UNCONDITIONAL: once per gate invocation, on every generation.
 - Checkpoint G (gate): after each gate run -> persist agent_run(role="final_qa", status=verdict) + artifact = GateJudgment
   + snapshot(stage="gate", v++). This is persistGateRun() referenced in 2.6.
 
