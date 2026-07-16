@@ -1,15 +1,16 @@
 import { encodeFunctionData, erc20Abi, parseUnits } from "viem";
+import { USDC_ADDRESS, DEFAULT_PAYMENT_ADDRESS } from "./network";
 
-// USDC on Base Sepolia (6 decimals). Coinbase-issued test USDC.
-export const USDC_BASE_SEPOLIA =
-  "0x036CbD53842c5426634e7929541eC2318f3dCF7e" as `0x${string}`;
+// USDC contract + chain switch together off NEXT_PUBLIC_USE_MAINNET (see lib/network).
+export const USDC_CONTRACT = USDC_ADDRESS;
 
 // Document price in USDC.
 export const DOC_PRICE_USDC = "1" as const;
 
-// Recipient (your Builder Code payout / payments address).
-export const PAYMENT_ADDRESS =
-  "0x21fbb46e2e0eb4c2079ed387585217705d30e082" as `0x${string}`;
+// Recipient (the Agent Studio payout / payments address). Override with
+// NEXT_PUBLIC_PAYMENT_ADDRESS; defaults to the shared Agent Studio wallet.
+export const PAYMENT_ADDRESS = (process.env.NEXT_PUBLIC_PAYMENT_ADDRESS ??
+  DEFAULT_PAYMENT_ADDRESS) as `0x${string}`;
 
 // Build a single ERC-20 transfer call for sendCalls().
 // The Builder Code dataSuffix is attached at the sendCalls() capabilities level,
@@ -19,7 +20,7 @@ export function buildUsdcTransferCall(
   amount: string = DOC_PRICE_USDC,
 ) {
   return {
-    to: USDC_BASE_SEPOLIA,
+    to: USDC_CONTRACT,
     data: encodeFunctionData({
       abi: erc20Abi,
       functionName: "transfer",

@@ -10,33 +10,24 @@
 // generate/start route via the `as_used_payments` table.
 
 import { createPublicClient, http, parseUnits, decodeEventLog, erc20Abi } from "viem";
-import { base, baseSepolia } from "viem/chains";
+import { ACTIVE_CHAIN, USDC_ADDRESS as USDC_ADDRESS_RAW, DEFAULT_PAYMENT_ADDRESS, RPC_URL } from "./network";
 
 // -- Network config ------------------------------------------------------------
-// Flip USE_MAINNET (env) to move from Sepolia to mainnet. The USDC address and
-// chain switch together so they can never drift apart.
-const USE_MAINNET = process.env.NEXT_PUBLIC_USE_MAINNET === "true";
+// Chain, USDC contract, and RPC all switch together off NEXT_PUBLIC_USE_MAINNET
+// (see lib/network). Nothing chain-specific is hardcoded here.
+export { ACTIVE_CHAIN };
 
-export const ACTIVE_CHAIN = USE_MAINNET ? base : baseSepolia;
+// Lowercased for case-insensitive log comparison below.
+export const USDC_ADDRESS = USDC_ADDRESS_RAW.toLowerCase();
 
-// USDC contract per network.
-const USDC_MAINNET = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
-const USDC_SEPOLIA = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
-export const USDC_ADDRESS = (USE_MAINNET ? USDC_MAINNET : USDC_SEPOLIA).toLowerCase();
-
-// Your Builder Code payout / payments address.
+// The Agent Studio payout / payments address. Override with PAYMENT_ADDRESS;
+// defaults to the shared Agent Studio wallet.
 export const PAYMENT_ADDRESS = (
-  process.env.PAYMENT_ADDRESS ?? "0x21fbb46e2e0eb4c2079ed387585217705d30e082"
+  process.env.PAYMENT_ADDRESS ?? DEFAULT_PAYMENT_ADDRESS
 ).toLowerCase();
 
 // Required amount in USDC (6 decimals). Default $1.
 export const REQUIRED_USDC = process.env.DOC_PRICE_USDC ?? "1";
-
-// RPC endpoint. Defaults to the public Base RPC; override with BASE_RPC_URL
-// (CDP / Alchemy / Infura) for reliability and rate-limit headroom in production.
-const RPC_URL =
-  process.env.BASE_RPC_URL ??
-  (USE_MAINNET ? "https://mainnet.base.org" : "https://sepolia.base.org");
 
 const client = createPublicClient({
   chain: ACTIVE_CHAIN,
