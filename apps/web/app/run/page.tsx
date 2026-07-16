@@ -467,6 +467,20 @@ export default function RunPage() {
         await persist({ items: merged, snapshot: makeSnapshot("review", 2, all) });
       }
       setStatus("qa_done");
+
+      // ── Unconditional Final QA Gate (spec 2.6, amended) ──────────────────────
+      // After the review stage resolves, the gate runs on EVERY generation before
+      // delivery — with or without a revise — so no path reaches download/deliver
+      // without a GateDecision. Revise first when the NUMERIC QA score < 9.2 (parsed
+      // as a number: 9 -> revise, 10 -> skip); the gate itself triggers further
+      // revises whenever its decision is "revise". When DCL is off, the pre-DCL
+      // manual flow (below) is preserved and this auto-gate is skipped.
+      if (ENABLE_DCL) {
+        const qaScore = Number((data as { score?: unknown })?.score);
+        const revised = (!Number.isNaN(qaScore) && qaScore < 9.2) ? await runReviseCore(spec) : null;
+        const docToGate = revised ?? spec;
+        if (docToGate) await runFinalQa(docToGate, 0);
+      }
     } catch (e) {
       timer.stop();
       setError(e instanceof Error ? e.message : "QA failed. Try again.");
@@ -492,13 +506,12 @@ export default function RunPage() {
       setQaReport(null);
       setMeta({ costUsd: (meta.costUsd as number) ?? 0, tokens: ((meta.inputTokens as number) ?? 0) + ((meta.outputTokens as number) ?? 0) });
       setWasRevised(true);
-      // Checkpoint V (revise): snapshot at a new version + the revised doc as artifact.
+      // Checkpoint V (revise): CONDITIONAL — written only when a revise actually ran.
+      // Snapshot only (the revised-doc artifact is optional per spec 3.5); this keeps
+      // as_dcl_artifacts to exactly the GateJudgment artifacts written at checkpoint G.
       if (ENABLE_DCL) {
         const v = ++versionRef.current;
-        await persist({
-          snapshot: makeSnapshot("revise", v, contextItems),
-          artifact: { id: crypto.randomUUID(), content: revised, created_at: new Date().toISOString(), metadata: { stage: "revise", version: v } },
-        });
+        await persist({ snapshot: makeSnapshot("revise", v, contextItems) });
       }
       return revised;
     } catch (e) {
@@ -849,22 +862,13 @@ export default function RunPage() {
                 </div>
               )}
 
-              {/* score >= 9: QA approved. With DCL the document must still clear the
-                  mandatory Final QA Gate before delivery (spec 2.6); without DCL it is
-                  ready to download immediately (original behaviour). */}
-              {qaReport.score >= 9 && status === "qa_done" && (
-                ENABLE_DCL ? (
-                  <div style={{ marginBottom: 14 }}>
-                    <button onClick={() => { if (spec) runFinalQa(spec, 0); }} style={{ width: "100%", padding: "14px 18px", borderRadius: 50, background: "var(--accent)", color: "#fff", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 14, boxShadow: "0 4px 16px rgba(33,37,102,0.28)" }}>
-                      Run Final QA Gate →
-                    </button>
-                    <p style={{ fontSize: 11, color: "var(--dim)", marginTop: 6, textAlign: "center" }}>Opus acceptance check before the client receives the document</p>
-                  </div>
-                ) : (
-                  <button onClick={downloadPdf} disabled={downloading} style={{ width: "100%", padding: "14px 18px", borderRadius: 50, background: "var(--green)", color: "#fff", border: "none", cursor: downloading ? "default" : "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 14, boxShadow: "0 4px 16px rgba(16,185,129,0.30)", marginBottom: 14 }}>
-                    {downloading ? "Generating PDF…" : "Download PDF"}
-                  </button>
-                )
+              {/* score >= 9: QA approved. With DCL the Final QA Gate runs automatically
+                  after the review stage (see runQA), so no manual control is shown here.
+                  Without DCL the document is ready to download immediately (pre-DCL). */}
+              {qaReport.score >= 9 && status === "qa_done" && !ENABLE_DCL && (
+                <button onClick={downloadPdf} disabled={downloading} style={{ width: "100%", padding: "14px 18px", borderRadius: 50, background: "var(--green)", color: "#fff", border: "none", cursor: downloading ? "default" : "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 14, boxShadow: "0 4px 16px rgba(16,185,129,0.30)", marginBottom: 14 }}>
+                  {downloading ? "Generating PDF…" : "Download PDF"}
+                </button>
               )}
 
               {/* score < 9: show Checklist + Revise button */}
@@ -881,7 +885,7 @@ export default function RunPage() {
                       ))}
                     </div>
                   )}
-                  {status === "qa_done" && (
+                  {status === "qa_done" && !ENABLE_DCL && (
                     <div style={{ marginBottom: 14 }}>
                       <button onClick={runRevise} style={{ width: "100%", padding: "14px 18px", borderRadius: 50, background: "var(--accent)", color: "#fff", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 14, boxShadow: "0 4px 16px rgba(33,37,102,0.28)" }}>
                         Застосувати ревізію
