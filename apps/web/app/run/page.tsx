@@ -467,6 +467,20 @@ export default function RunPage() {
         await persist({ items: merged, snapshot: makeSnapshot("review", 2, all) });
       }
       setStatus("qa_done");
+
+      // ── Unconditional Final QA Gate (spec 2.6, amended) ──────────────────────
+      // After the review stage resolves, the gate runs on EVERY generation before
+      // delivery — with or without a revise — so no path reaches download/deliver
+      // without a GateDecision. Revise first when the NUMERIC QA score < 9.2 (parsed
+      // as a number: 9 -> revise, 10 -> skip); the gate itself triggers further
+      // revises whenever its decision is "revise". When DCL is off, the pre-DCL
+      // manual flow (below) is preserved and this auto-gate is skipped.
+      if (ENABLE_DCL) {
+        const qaScore = Number((data as { score?: unknown })?.score);
+        const revised = (!Number.isNaN(qaScore) && qaScore < 9.2) ? await runReviseCore(spec) : null;
+        const docToGate = revised ?? spec;
+        if (docToGate) await runFinalQa(docToGate, 0);
+      }
     } catch (e) {
       timer.stop();
       setError(e instanceof Error ? e.message : "QA failed. Try again.");
@@ -492,13 +506,12 @@ export default function RunPage() {
       setQaReport(null);
       setMeta({ costUsd: (meta.costUsd as number) ?? 0, tokens: ((meta.inputTokens as number) ?? 0) + ((meta.outputTokens as number) ?? 0) });
       setWasRevised(true);
-      // Checkpoint V (revise): snapshot at a new version + the revised doc as artifact.
+      // Checkpoint V (revise): CONDITIONAL — written only when a revise actually ran.
+      // Snapshot only (the revised-doc artifact is optional per spec 3.5); this keeps
+      // as_dcl_artifacts to exactly the GateJudgment artifacts written at checkpoint G.
       if (ENABLE_DCL) {
         const v = ++versionRef.current;
-        await persist({
-          snapshot: makeSnapshot("revise", v, contextItems),
-          artifact: { id: crypto.randomUUID(), content: revised, created_at: new Date().toISOString(), metadata: { stage: "revise", version: v } },
-        });
+        await persist({ snapshot: makeSnapshot("revise", v, contextItems) });
       }
       return revised;
     } catch (e) {
@@ -670,12 +683,15 @@ export default function RunPage() {
     // Once the gate has produced a decision the document is deliverable in every
     // deliver* case (including a forced pass) — Download must never be disabled (D2).
     const gateDelivered = status === "gate_done" || gateDecision !== null;
-    const canDownloadPdf = wasRevised || gateDelivered || (qaReport !== null && qaReport.score >= 9);
-    // The document is ready to send to the client only once it is final: either a
-    // revision has been applied, or QA approved it (score >= 9). Delivery must NOT be
-    // offered on an un-revised draft that QA flagged for revision, and it MUST remain
-    // available after a revision (when qaReport is cleared). Persist through delivery.
-    const documentReady = wasRevised || gateDelivered || (qaReport !== null && qaReport.score >= 9);
+    // When DCL is ON, the Final QA Gate is a MANDATORY step before delivery (spec 2.6):
+    // Download and Send unlock only after the gate returns a deliver decision — a
+    // QA-approved (score>=9) or merely revised draft is NOT deliverable until it has
+    // passed the gate. When DCL is OFF, keep the original pre-DCL behaviour so the
+    // manual flow is not regressed (QA score>=9, or a completed manual revision).
+    const canDownloadPdf = ENABLE_DCL
+      ? gateDelivered
+      : (wasRevised || (qaReport !== null && qaReport.score >= 9));
+    const documentReady = canDownloadPdf;
     // Gate warning banner: shown for deliver_with_warning (incl. forced pass).
     const showGateWarning = gateDecision !== null && gateDecision.action === "deliver_with_warning";
     const gateChecking = status === "final_qa_checking";
@@ -846,8 +862,10 @@ export default function RunPage() {
                 </div>
               )}
 
-              {/* score >= 9: ready, show Download PDF */}
-              {qaReport.score >= 9 && (
+              {/* score >= 9: QA approved. With DCL the Final QA Gate runs automatically
+                  after the review stage (see runQA), so no manual control is shown here.
+                  Without DCL the document is ready to download immediately (pre-DCL). */}
+              {qaReport.score >= 9 && status === "qa_done" && !ENABLE_DCL && (
                 <button onClick={downloadPdf} disabled={downloading} style={{ width: "100%", padding: "14px 18px", borderRadius: 50, background: "var(--green)", color: "#fff", border: "none", cursor: downloading ? "default" : "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 14, boxShadow: "0 4px 16px rgba(16,185,129,0.30)", marginBottom: 14 }}>
                   {downloading ? "Generating PDF…" : "Download PDF"}
                 </button>
@@ -867,7 +885,7 @@ export default function RunPage() {
                       ))}
                     </div>
                   )}
-                  {status === "qa_done" && (
+                  {status === "qa_done" && !ENABLE_DCL && (
                     <div style={{ marginBottom: 14 }}>
                       <button onClick={runRevise} style={{ width: "100%", padding: "14px 18px", borderRadius: 50, background: "var(--accent)", color: "#fff", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 14, boxShadow: "0 4px 16px rgba(33,37,102,0.28)" }}>
                         Застосувати ревізію
@@ -1071,10 +1089,10 @@ export default function RunPage() {
           </p>
           {/* Pipeline progress */}
           <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 32 }}>
-            {["Research", "Writer", "QA", "Deliver"].map((step, i) => (
+            {(ENABLE_DCL ? ["Research", "Writer", "QA", "Final QA", "Deliver"] : ["Research", "Writer", "QA", "Deliver"]).map((step, i, arr) => (
               <div key={step} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <div style={{ padding: "5px 12px", borderRadius: 8, fontSize: 11, fontWeight: 600, background: (status === "running" && i === 0) || (status === "writing" && i === 1) ? "var(--accent)" : "var(--card)", color: (status === "running" && i === 0) || (status === "writing" && i === 1) ? "#fff" : "var(--dim)", boxShadow: "var(--nm-out-sm)" }}>{step}</div>
-                {i < 3 && <span style={{ color: "var(--dim)", fontSize: 12 }}>→</span>}
+                {i < arr.length - 1 && <span style={{ color: "var(--dim)", fontSize: 12 }}>→</span>}
               </div>
             ))}
           </div>
