@@ -10,8 +10,10 @@ next-env.d.ts
 # TypeScript build cache
 *.tsbuildinfo
 
-# Lock files (managed per environment)
-package-lock.json
+# Lock files
+# apps/web/package-lock.json is committed intentionally so Netlify builds are
+# reproducible via `npm ci` (prevents transitive dependency drift). Other lock
+# files remain ignored.
 pnpm-lock.yaml
 
 # Build outputs
