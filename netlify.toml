@@ -1,6 +1,10 @@
 [build]
   base    = "apps/web"
-  command = "npm install && npm run build"
+  # npm ci installs strictly from the committed package-lock.json, so the deploy
+  # is reproducible and immune to transitive dependency drift (a "latest"/caret
+  # bump in a transitive dep, e.g. @base-org/account pulling optional @x402/*
+  # modules, previously broke fresh no-cache installs while local builds passed).
+  command = "npm ci && npm run build"
   publish = ".next"
 
 [build.environment]
