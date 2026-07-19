@@ -22,7 +22,7 @@ import {
 import type { ContextItem, SuggestedContextItem } from "./dcl/types";
 
 // Re-export the generic pieces Agent Studio uses, so callers have one import surface.
-export { ENABLE_DCL } from "./dcl/types";
+export { ENABLE_DCL, OPERATOR_MODE } from "./dcl/types";
 export type { ContextItem, ContextStatus, SuggestedContextItem } from "./dcl/types";
 export type { ContextPackage } from "./dcl/package";
 
