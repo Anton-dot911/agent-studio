@@ -109,4 +109,13 @@ export interface ContextSnapshot {
 export const ENABLE_DCL =
   (process.env.NEXT_PUBLIC_ENABLE_DCL ?? "true").toLowerCase() !== "false";
 
+// Operator view toggle. Default "0" => hidden (the public, client-facing
+// deployment). When "1" (or "true") the operator sees the internal DCL/cost
+// instrumentation: the token/cost counter chip, the Dynamic Context panel, and
+// per-agent diagnostics. This gates UI VISIBILITY ONLY — cost fields, context
+// items, snapshots and gate runs are still computed and persisted exactly the
+// same regardless of the flag.
+export const OPERATOR_MODE =
+  ["1", "true"].includes((process.env.NEXT_PUBLIC_OPERATOR_MODE ?? "0").toLowerCase());
+
 export const DCL_MAX_CONTEXT_ITEMS_PER_PACKAGE = 30;

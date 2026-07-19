@@ -6,6 +6,7 @@ import { PayAndGenerate } from "../../components/PayAndGenerate";
 // binds the generic DCL core to this app's roles, taxonomy, and intake form.
 import {
   ENABLE_DCL,
+  OPERATOR_MODE,
   materialize,
   seedBaseContextItems,
   baseContextFromIntake,
@@ -771,7 +772,7 @@ export default function RunPage() {
               </span>
             )}
 
-            {meta && <span style={{ fontSize: 12, padding: "8px 16px", borderRadius: 50, background: "var(--card)", boxShadow: "var(--shadow-sm)", border: "1.5px solid rgba(15,18,64,0.08)", color: "var(--dim)", marginLeft: "auto" }}>{meta.tokens.toLocaleString()} tok / ${meta.costUsd.toFixed(4)}</span>}
+            {OPERATOR_MODE && meta && <span style={{ fontSize: 12, padding: "8px 16px", borderRadius: 50, background: "var(--card)", boxShadow: "var(--shadow-sm)", border: "1.5px solid rgba(15,18,64,0.08)", color: "var(--dim)", marginLeft: "auto" }}>{meta.tokens.toLocaleString()} tok / ${meta.costUsd.toFixed(4)}</span>}
           </div>
 
           {/* Error banner in document view */}
@@ -829,8 +830,9 @@ export default function RunPage() {
                 </div>
               </div>
 
-              {/* Implementation Architect — build-readiness summary */}
-              {architectReport && (architectReport.verdict as Record<string, unknown> | undefined) && (
+              {/* Implementation Architect — build-readiness summary (internal
+                  per-agent diagnostic; operator-only). */}
+              {OPERATOR_MODE && architectReport && (architectReport.verdict as Record<string, unknown> | undefined) && (
                 <div style={{ background: "var(--bg)", borderRadius: 10, padding: "12px 14px", marginBottom: 12, borderLeft: "3px solid #6d28d9" }}>
                   <p style={{ fontSize: 10, letterSpacing: "2px", textTransform: "uppercase", color: "#6d28d9", fontWeight: 700, marginBottom: 6 }}>
                     Implementation Architect — build readiness {typeof (architectReport.verdict as Record<string, unknown>).buildReadinessScore === "number" ? `${(architectReport.verdict as Record<string, unknown>).buildReadinessScore}/10` : ""}
@@ -1203,7 +1205,10 @@ function DclPanel({
 }) {
   const [open, setOpen] = useState(true);
   const [showDebug, setShowDebug] = useState(false);
-  if (!ENABLE_DCL || items.length === 0) return null;
+  // Operator-only: the entire Dynamic Context panel (items, confidence lines,
+  // "via <agent>" rows, Accept/Reject/Archive controls, debug package preview)
+  // is internal instrumentation and hidden from the client-facing product.
+  if (!ENABLE_DCL || !OPERATOR_MODE || items.length === 0) return null;
 
   const visible = items.filter(i => i.status !== "archived");
   const autoAccepted = visible.filter(i => i.status === "auto_accepted" || i.status === "accepted");
